@@ -2,6 +2,8 @@
    import cors from 'cors';
 import { programsRouter } from './routes/programs.js';
 import { staffRouter } from './routes/staff.js';
+import { studentApplicationsRouter } from './routes/studentApplications.js';
+import { studentOffersRouter } from './routes/studentOffers.js';
    import {enquiryRouter} from './routes/enquiries.js';
    import {studentAuthRouter} from './routes/auth.js';
    import {studentSignupRouter} from './routes/signup.js';
@@ -12,6 +14,7 @@ import { staffRouter } from './routes/staff.js';
    export function createApp() {
      const app = express();
      app.use(cors({ origin: process.env.APP_URL || 'http://localhost:5173' }));
+     app.use('/api/student/documents', express.json({ limit: '14mb' }));
      app.use(express.json({ limit: '50kb' }));
 
      app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -20,6 +23,8 @@ import { staffRouter } from './routes/staff.js';
      app.use('/api/enquiries', enquiryRouter);
      app.use('/api/student', studentAuthRouter);
      app.use('/api/student', studentSignupRouter);
+     app.use('/api/student', studentApplicationsRouter);
+     app.use('/api/student', studentOffersRouter);
      app.use('/api/student/qualification',
       createStudentQualificationRouter(requireStudent));
 
