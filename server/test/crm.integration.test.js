@@ -33,7 +33,7 @@ async function request(path, method='GET', body, token) {
 
 before(async () => {
   // No destructive reset here; CI prepares a dedicated disposable test database.
-  const programs = await query('SELECT id FROM program WHERE is_active=TRUE AND min_qualification_level=4 AND (language_requirements->>'IELTS')::numeric=6.5 ORDER BY name LIMIT 1');
+  const programs = await query(`SELECT id FROM program WHERE is_active=TRUE AND min_qualification_level=4 AND (language_requirements->>'IELTS')::numeric=6.5 ORDER BY name LIMIT 1`);
   assert.ok(programs.rowCount, 'Test database must contain active programs');
   programId = programs.rows[0].id;
   const hash = await bcrypt.hash(password, 10);
