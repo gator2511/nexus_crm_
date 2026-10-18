@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import Enquiry from './pages/Enquiry.jsx';
 import Login from './pages/Login.jsx';
+import Signup from './pages/Signup.jsx';
 import Portal from './pages/Portal.jsx';
 import StaffLogin from './pages/StaffLogin.jsx';
 import StaffDashboard from './pages/StaffDashboard.jsx';
@@ -23,6 +24,7 @@ function App() {
       <Route path="/" element={<Navigate to="/enquiry" replace />} />
       <Route path="/enquiry" element={<Enquiry />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/portal" element={<Portal />} />
       <Route path="/staff/login" element={<StaffLogin />} />
       <Route path="/staff/dashboard" element={<StaffDashboard />} />
