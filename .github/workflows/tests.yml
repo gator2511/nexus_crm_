@@ -20,6 +20,9 @@ jobs:
       - name: Run Abhimanyu unit tests
         working-directory: server
         run: node --test test/eligibility.test.js test/application.test.js
+      - name: Run Isha dashboard unit tests
+        working-directory: server
+        run: node --test test/dashboard.test.js
       - name: Run CRM integration tests
         working-directory: server
         run: node --test test/crm.integration.test.js
