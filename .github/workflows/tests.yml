@@ -6,7 +6,26 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+          POSTGRES_DB: nexus_crm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus -d nexus_crm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://nexus:nexus@localhost:5432/nexus_crm
+      SESSION_SECRET: ci-testing-session-secret-with-more-than-32-characters
+      RESEND_API_KEY: ''
+      MAIL_FROM: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,6 +45,9 @@ jobs:
       - name: Run staff dashboard API smoke tests
         working-directory: server
         run: node --test test/dashboard.api.test.js
+      - name: Initialise disposable integration database
+        working-directory: server
+        run: npm run db:reset
       - name: Run CRM integration tests
         working-directory: server
         run: node --test test/crm.integration.test.js
