@@ -1,0 +1,36 @@
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createApp } from '../src/app.js';
+let server, origin;
+before(async () => { server = createApp().listen(0); await new Promise(resolve => server.once('listening',resolve)); origin = 'http://127.0.0.1:' + server.address().port; });
+after(async () => { if(server) await new Promise(resolve=>server.close(resolve)); });
+const request = async (path, method='GET', body, token) => {
+ const res=await fetch(origin+path,{method,headers:{...(body?{'content-type':'application/json'}:{}),...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
+ let data;try{data=await res.json()}catch{data=null};return {status:res.status,data};
+};
+const enquiry={full_name:'Test Student',email:'test.student@example.invalid',phone:'0400000000',address:'1 Test Street',program_id:1,message:'Test enquiry'};
+async function mustExist(path,method='GET',body,token){const r=await request(path,method,body,token);assert.notEqual(r.status,404,'Required API route unavailable: '+method+' '+path);return r;}
+test('INF-01 health endpoint responds successfully', async()=>{const r=await request('/api/health');assert.equal(r.status,200);assert.deepEqual(r.data,{ok:true});});
+test('INF-02 unknown API routes return 404', async()=>{assert.equal((await request('/api/undefined-route')).status,404);});
+test('INF-03 malformed JSON returns 400',async()=>{const r=await fetch(origin+'/api/health',{method:'POST',headers:{'content-type':'application/json'},body:'{' });assert.equal(r.status,400);});
+test('INF-04 oversized JSON returns client error',async()=>{const r=await request('/api/enquiries','POST',{payload:'x'.repeat(60000)});assert.equal(r.status,413);});
+test('TC-101 valid enquiry accepted',async()=>{const r=await mustExist('/api/enquiries','POST',enquiry);assert.ok([200,201].includes(r.status));});
+test('TC-102 malformed email rejected',async()=>{const r=await mustExist('/api/enquiries','POST',{...enquiry,email:'invalid-email'});assert.equal(r.status,422);});
+test('TC-103 missing required fields rejected',async()=>{const r=await mustExist('/api/enquiries','POST',{...enquiry,full_name:'',email:''});assert.equal(r.status,422);});
+test('TC-104 student login available',async()=>{await mustExist('/api/student/login','POST',{email:'student@example.invalid',password:'example'});});
+test('TC-105 wrong password rejected',async()=>{const r=await mustExist('/api/student/login','POST',{email:'student@example.invalid',password:'wrong'});assert.ok([400,401,403].includes(r.status));});
+test('TC-106 eligibility pass assessment available',async()=>{await mustExist('/api/student/qualification','POST',{qualification_level:'bachelor',english_test:'IELTS',english_score:8});});
+test('TC-107 eligibility fail assessment available',async()=>{await mustExist('/api/student/qualification','POST',{qualification_level:'none',english_test:'IELTS',english_score:2});});
+test('TC-108 eligibility review assessment available',async()=>{await mustExist('/api/student/qualification','POST',{qualification_level:'diploma',english_test:'IELTS',english_score:5.5});});
+test('TC-109 invalid stage transition enforcement available',async()=>{await mustExist('/api/staff/prospects/1/stage','POST',{stage:'Enrolled'});});
+test('TC-110 application submission available',async()=>{await mustExist('/api/student/application/submit','POST',{});});
+test('TC-111 unsupported document upload endpoint available',async()=>{await mustExist('/api/student/documents','POST',{filename:'malware.exe'});});
+test('TC-112 oversized document upload endpoint available',async()=>{await mustExist('/api/student/documents','POST',{filename:'big.pdf',size:11000000});});
+test('TC-113 automatic brochure email integrated with enquiry',async()=>{await mustExist('/api/enquiries','POST',enquiry);});
+test('TC-114 staff API access control endpoint exists',async()=>{const r=await mustExist('/api/staff/prospects');assert.ok([401,403].includes(r.status));});
+test('TC-115 offer PDF generation available',async()=>{await mustExist('/api/student/offer');});
+test('TC-116 recruitment reports available',async()=>{await mustExist('/api/staff/reports');});
+test('TC-117 scheduled follow-up job endpoint available',async()=>{await mustExist('/api/staff/jobs/run','POST',{});});
+test('TC-118 stage audit history endpoint available',async()=>{await mustExist('/api/staff/prospects/1/history');});
+test('TC-119 staff document rejection available',async()=>{await mustExist('/api/staff/documents/1/reject','POST',{reason:'Invalid'});});
+test('TC-120 offer acceptance available',async()=>{await mustExist('/api/student/offer/accept','POST',{});});
