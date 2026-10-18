@@ -17,10 +17,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: server
-      - name: Execute infrastructure and CRM tests
-        run: node --test --test-reporter=tap test/crm.integration.test.js | tee test-results.tap; exit ${PIPESTATUS[0]}
+      - name: Run Abhimanyu eligibility tests
         working-directory: server
-        shell: bash
+        run: node --test test/eligibility.test.js
+      - name: Run CRM integration tests
+        working-directory: server
+        run: node --test test/crm.integration.test.js
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
