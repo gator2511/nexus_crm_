@@ -1,5 +1,7 @@
    import express from 'express';
    import cors from 'cors';
+import { programsRouter } from './routes/programs.js';
+import { staffRouter } from './routes/staff.js';
    import {enquiryRouter} from './routes/enquiries.js';
    import {studentAuthRouter} from './routes/auth.js';
    import {studentSignupRouter} from './routes/signup.js';
@@ -13,6 +15,8 @@
      app.use(express.json({ limit: '50kb' }));
 
      app.get('/api/health', (_req, res) => res.json({ ok: true }));
+     app.use('/api/programs', programsRouter);
+     app.use('/api/staff', staffRouter);
      app.use('/api/enquiries', enquiryRouter);
      app.use('/api/student', studentAuthRouter);
      app.use('/api/student', studentSignupRouter);
