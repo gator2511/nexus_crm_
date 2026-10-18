@@ -55,17 +55,6 @@ if (
 
 const minimum = Number(configuredMinimum);
 
-  const minimum = minimumScores[testType];
-if (
-  minimum === null ||
-  minimum === undefined ||
-  !Number.isFinite(minimum)
-) {
-  return {
-    status: "Review",
-    reason: "English test threshold is not configured",
-  };
-}
   if (!Number.isFinite(score) ||
       !Number.isFinite(minimum)) {
     return {
