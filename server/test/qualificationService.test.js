@@ -88,3 +88,26 @@ test("TC-221: Missing program requirements are rejected", () => {
     /not configured/
   );
 });
+
+test("TC-222: Missing English threshold requires review", () => {
+  const programWithoutIELTS = {
+    min_qualification_level: 3,
+    language_requirements: {
+      PTE: 58,
+      TOEFL: 79,
+    },
+  };
+
+  const result = assessQualification(
+    {
+      qualification_level: 4,
+      english_test: "IELTS",
+      english_score: 7,
+    },
+    programWithoutIELTS
+  );
+
+  assert.equal(result.status, "Review");
+  assert.equal(result.requiresStaffReview, true);
+  assert.match(result.reason, /threshold is not configured/);
+});
