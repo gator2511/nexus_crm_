@@ -1,62 +1,45 @@
-
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { getStudentProfile } from "../api.js";
-import ApplicationSection from "./ApplicationSection.jsx";
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getStudentProfile } from '../api.js';
+import ApplicationSection from './ApplicationSection.jsx';
 
 export default function Portal() {
   const navigate = useNavigate();
   const [student, setStudent] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!localStorage.getItem("nexus_token")) {
-      navigate("/login", { replace: true });
-      return;
+    if (!localStorage.getItem('nexus_token')) {
+      navigate('/login', { replace: true }); return;
     }
-
     getStudentProfile()
-      .then(setStudent)
-      .catch((err) => setError(err.message))
+      .then(result => setStudent(result.student || result))
+      .catch(err => {
+        if (err.status === 401) {
+          localStorage.removeItem('nexus_token');
+          navigate('/login', { replace: true });
+        } else { setError(err.message); }
+      })
       .finally(() => setLoading(false));
   }, [navigate]);
 
   function logout() {
-    localStorage.removeItem("nexus_token");
-    navigate("/login", { replace: true });
+    localStorage.removeItem('nexus_token');
+    navigate('/login', { replace: true });
   }
+  if (loading) return <main className="page narrow"><p>Loading student portal…</p></main>;
+  if (error) return <main className="page narrow"><section className="panel">
+    <h2>Unable to load student details</h2><p role="alert" className="error">{error}</p>
+    <button onClick={logout}>Return to login</button>
+  </section></main>;
 
-  if (loading) return <p>Loading student portal...</p>;
-
-  if (error) {
-    return (
-      <main>
-        <h2>Unable to load student details</h2>
-        <p role="alert">{error}</p>
-        <button onClick={logout}>Return to Login</button>
-      </main>
-    );
-  }
-
-  return (
-    <main style={{ maxWidth: 900, margin: "40px auto" }}>
-      <h1>Student Portal</h1>
-      <p>Welcome, {student?.full_name || "Student"}</p>
-
-      <section>
-        <h2>Application Progress</h2>
-        <p>Current Stage: {student?.stage || "Not available"}</p>
-      </section>
-
-      <section>
-        <h2>Qualification Details</h2>
-        <p>Manage your qualification information here.</p>
-      </section>
-
-<ApplicationSection />
-
-      <button onClick={logout}>Logout</button>
-    </main>
-  );
+  return <main className="page wide">
+    <div className="page-heading"><div><h1>Student portal</h1>
+      <p className="muted">Welcome, {student?.full_name || student?.email || 'Student'}.</p></div>
+      <button className="secondary" onClick={logout}>Sign out</button></div>
+    <section className="panel"><h2>Your profile</h2><p>Email: {student?.email || 'Not available'}</p>
+      <p>Current recruitment stage: {student?.stage || 'Awaiting update'}</p></section>
+    <section className="panel"><h2>Application</h2><ApplicationSection /></section>
+  </main>;
 }
