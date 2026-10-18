@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getStudentProfile } from "../api.js";
+import ApplicationSection from "./ApplicationSection.jsx";
 
 export default function Portal() {
   const navigate = useNavigate();
@@ -53,10 +54,7 @@ export default function Portal() {
         <p>Manage your qualification information here.</p>
       </section>
 
-      <section>
-        <h2>Application</h2>
-        <p>Application and document submission will be added next.</p>
-      </section>
+<ApplicationSection />
 
       <button onClick={logout}>Logout</button>
     </main>
