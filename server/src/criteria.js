@@ -33,14 +33,39 @@ export function checkEligibility(student, program) {
 
   const score = Number(student.english_score);
 
-  const minimumScores = {
-    IELTS: Number(program.min_ielts),
-    PTE: Number(program.min_pte),
-    TOEFL: Number(program.min_toefl),
+const minimumScores = {
+  IELTS: program.min_ielts,
+  PTE: program.min_pte,
+  TOEFL: program.min_toefl,
+};
+
+const configuredMinimum = minimumScores[testType];
+
+if (
+  configuredMinimum === null ||
+  configuredMinimum === undefined ||
+  configuredMinimum === "" ||
+  !Number.isFinite(Number(configuredMinimum))
+) {
+  return {
+    status: "Review",
+    reason: "English test threshold is not configured",
   };
+}
+
+const minimum = Number(configuredMinimum);
 
   const minimum = minimumScores[testType];
-
+if (
+  minimum === null ||
+  minimum === undefined ||
+  !Number.isFinite(minimum)
+) {
+  return {
+    status: "Review",
+    reason: "English test threshold is not configured",
+  };
+}
   if (!Number.isFinite(score) ||
       !Number.isFinite(minimum)) {
     return {
