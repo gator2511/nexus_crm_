@@ -17,6 +17,8 @@ function App() {
       <header style={{ padding: 20, background: "#f3f4f6" }}>
         <h1>Nexus CRM</h1>
         <nav>
+          {" | "}
+<Link to="/login">Student Login</Link>
           <Link to="/enquiry">Student Enquiry</Link>
         </nav>
       </header>
@@ -25,6 +27,7 @@ function App() {
         <Route path="/" element={<Navigate to="/enquiry" replace />} />
         <Route path="/enquiry" element={<Enquiry />} />
         <Route path="*" element={<p>Page not found</p>} />
+        <Route path="/login" element={<Login />} />
       </Routes>
     </BrowserRouter>
   );
@@ -35,3 +38,4 @@ createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
+import Login from "./pages/Login.jsx";
