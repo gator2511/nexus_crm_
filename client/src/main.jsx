@@ -11,6 +11,7 @@ import {
 
 import Enquiry from "./pages/Enquiry.jsx";
 import Login from "./pages/Login.jsx";
+import Portal from "./pages/Portal.jsx";
 function App() {
   return (
     <BrowserRouter>
@@ -28,6 +29,7 @@ function App() {
         <Route path="/enquiry" element={<Enquiry />} />
         <Route path="*" element={<p>Page not found</p>} />
         <Route path="/login" element={<Login />} />
+        <Route path="/portal" element={<Portal />} />
       </Routes>
     </BrowserRouter>
   );
