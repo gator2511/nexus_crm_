@@ -1,5 +1,11 @@
    import express from 'express';
    import cors from 'cors';
+   import {enquiryRouter} from './routes/enquiries.js';
+   import {studentAuthRouter} from './routes/auth.js';
+   import {studentSignupRouter} from './routes/signup.js';
+   import {requireStudent} from './auth.js';
+   import {createStudentQualificationRouter} from './routes/studentQualification.js';
+
 
    export function createApp() {
      const app = express();
@@ -7,6 +13,12 @@
      app.use(express.json({ limit: '50kb' }));
 
      app.get('/api/health', (_req, res) => res.json({ ok: true }));
+     app.use('/api/enquiries', enquiryRouter);
+     app.use('/api/student', studentAuthRouter);
+     app.use('/api/student', studentSignupRouter);
+     app.use('/api/student/qualification',
+      createStudentQualificationRouter(requireStudent));
+
 
      // Unknown API paths
      app.use('/api', (_req, res) => res.status(404).json({ message: 'Not found.' }));
