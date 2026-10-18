@@ -1,143 +1,74 @@
-
-import React, { useState } from "react";
+import React, { useState } from 'react';
+import { apiRequest } from '../api.js';
+import { validateDocument } from '../validation.js';
 
 export default function ApplicationSection() {
-  const [form, setForm] = useState({
-    qualification: "",
-    institution: "",
-    graduationYear: "",
-  });
+  const [form, setForm] = useState({ qualification: '', institution: '', graduationYear: '' });
   const [document, setDocument] = useState(null);
-  const [status, setStatus] = useState("");
-
-  function handleChange(event) {
-    setForm({
-      ...form,
-      [event.target.name]: event.target.value,
+  const [documentType, setDocumentType] = useState('Academic transcript');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  function update(e) { setForm(prev => ({ ...prev, [e.target.name]: e.target.value })); }
+  function chooseFile(e) {
+    const file = e.target.files?.[0] || null;
+    const error = file ? validateDocument(file) : '';
+    setDocument(error ? null : file);
+    setStatus(error || '');
+  }
+  async function uploadFile(file) {
+    const contentBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Unable to read selected document'));
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.readAsDataURL(file);
+    });
+    return apiRequest('/student/documents', {
+      method: 'POST',
+      body: JSON.stringify({
+        filename: file.name, mime_type: file.type,
+        document_type: documentType, contentBase64,
+      }),
     });
   }
-
-  function handleDocument(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const allowedTypes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
-      setStatus("Only PDF, JPG and PNG files are accepted.");
-      setDocument(null);
-      return;
+  async function submit(e) {
+    e.preventDefault(); setStatus('');
+    if (!form.qualification.trim() || !form.institution.trim()) {
+      setStatus('Qualification and institution are required.'); return;
     }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setStatus("Maximum file size is 10 MB.");
-      setDocument(null);
-      return;
-    }
-
-    setDocument(file);
-    setStatus("");
-  }
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setStatus("");
-
-    if (!form.qualification || !form.institution) {
-      setStatus("Complete all required fields.");
-      return;
-    }
-
-    const token = localStorage.getItem("nexus_token");
-
-    if (!token) {
-      setStatus("Please log in before submitting.");
-      return;
-    }
-
-    const data = new FormData();
-    data.append("qualification", form.qualification);
-    data.append("institution", form.institution);
-    data.append("graduationYear", form.graduationYear);
-
-    if (document) {
-      data.append("document", document);
-    }
-
+    setBusy(true);
     try {
-      const response = await fetch("/api/student/application", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: data,
+      const created = await apiRequest('/student/application', {
+        method: 'POST',
+        body: JSON.stringify(form),
       });
-
-      if (!response.ok) {
-        throw new Error("Application submission failed.");
+      if (document) {
+        await uploadFile(document);
+        setStatus('Application draft saved and supporting document uploaded. Upload all other required documents before final submission.');
+      } else {
+        setStatus('Application draft saved. Add required documents before submitting.');
       }
-
-      setStatus("Application submitted successfully.");
-    } catch (error) {
-      setStatus(error.message);
-    }
+      if (!created?.applicationId) throw new Error('Application ID missing from response');
+    } catch (error) { setStatus(error.message || 'Unable to save application'); }
+    finally { setBusy(false); }
   }
-
-  return (
-    <section style={{ marginTop: 30 }}>
-      <h2>Student Application</h2>
-
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="qualification">Qualification</label>
-          <input
-            id="qualification"
-            name="qualification"
-            value={form.qualification}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="institution">Institution</label>
-          <input
-            id="institution"
-            name="institution"
-            value={form.institution}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="graduationYear">Graduation Year</label>
-          <input
-            id="graduationYear"
-            name="graduationYear"
-            type="number"
-            value={form.graduationYear}
-            onChange={handleChange}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="document">Supporting Document</label>
-          <input
-            id="document"
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            onChange={handleDocument}
-          />
-        </div>
-
-        <button type="submit">Submit Application</button>
-        {status && <p role="status">{status}</p>}
-      </form>
-    </section>
-  );
+  return <section>
+    <h2>Application details</h2>
+    <form onSubmit={submit} className="form-stack">
+      <label>Qualification<input required name="qualification" value={form.qualification} onChange={update} /></label>
+      <label>Institution<input required name="institution" value={form.institution} onChange={update} /></label>
+      <label>Graduation year<input type="number" min="1950" name="graduationYear" value={form.graduationYear} onChange={update} /></label>
+      <label>Document type
+        <select value={documentType} onChange={e => setDocumentType(e.target.value)}>
+          <option>Academic transcript</option>
+          <option>Passport or photo ID</option>
+          <option>English test result</option>
+        </select>
+      </label>
+      <label>Supporting document (PDF, JPG or PNG; maximum 10 MB)
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={chooseFile} />
+      </label>
+      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save application draft'}</button>
+      {status && <p role="status">{status}</p>}
+    </form>
+  </section>;
 }
