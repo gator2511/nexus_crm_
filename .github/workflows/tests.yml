@@ -23,6 +23,9 @@ jobs:
       - name: Run Isha dashboard unit tests
         working-directory: server
         run: node --test test/dashboard.test.js
+      - name: Run staff dashboard API smoke tests
+        working-directory: server
+        run: node --test test/dashboard.api.test.js
       - name: Run CRM integration tests
         working-directory: server
         run: node --test test/crm.integration.test.js
