@@ -1,21 +1,37 @@
-import React, { useEffect, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 
+import React from "react";
+import { createRoot } from "react-dom/client";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+} from "react-router-dom";
+
+import Enquiry from "./pages/Enquiry.jsx";
 
 function App() {
-  const [status, setStatus] = useState('Checking the API…');
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then((d) => setStatus(d.ok ? 'API is running' : 'API problem'))
-      .catch(() => setStatus('Cannot reach the API'));
-  }, []);
   return (
-    <main style={{ fontFamily: 'system-ui', padding: '2rem' }}>
-      <h1>Nexus CRM</h1>
-      <p>{status}</p>
-    </main>
+    <BrowserRouter>
+      <header style={{ padding: 20, background: "#f3f4f6" }}>
+        <h1>Nexus CRM</h1>
+        <nav>
+          <Link to="/enquiry">Student Enquiry</Link>
+        </nav>
+      </header>
+
+      <Routes>
+        <Route path="/" element={<Navigate to="/enquiry" replace />} />
+        <Route path="/enquiry" element={<Enquiry />} />
+        <Route path="*" element={<p>Page not found</p>} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
-createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
