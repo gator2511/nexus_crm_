@@ -1,0 +1,35 @@
+
+name: Frontend Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/workflows/frontend-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm install
+
+      - name: Run unit tests
+        working-directory: client
+        run: npm test
+
+      - name: Build React frontend
+        working-directory: client
+        run: npm run build
