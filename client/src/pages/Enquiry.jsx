@@ -44,9 +44,14 @@ export default function Enquiry() {
     try {
       const result = await submitEnquiry(form);
       const emailState = result.brochureEmailStatus;
-      setStatus({ ok: true, text: emailState === 'Sent'
+      const registrationText = result.signupEmailStatus === 'Sent'
+        ? ' Check your email for a private link to create your student password (valid for 24 hours).'
+        : result.signupEmailStatus === 'NotRequired'
+          ? ' An existing student account is already associated with this email; please log in.'
+          : ' The student registration invitation could not be sent. Please contact admissions.';
+      setStatus({ ok: true, text: (emailState === 'Sent'
         ? 'Enquiry submitted. Your brochure email has been sent.'
-        : 'Enquiry submitted. Brochure email was not confirmed; please contact admissions if needed.' });
+        : 'Enquiry submitted. Brochure email was not confirmed; please contact admissions if needed.') + registrationText });
       setForm({ full_name: '', email: '', phone: '', address: '',
         program_id: '', message: '', consent: false });
     } catch (err) {
