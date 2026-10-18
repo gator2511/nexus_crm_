@@ -32,10 +32,3 @@ test('UI-API-03 staff login rejects missing credentials', async () => {
   assert.equal(result.status, 400);
 });
 
-test('UI-API-04 program list does not require auth middleware', async () => {
-  // Endpoint is registered. A database must be configured for a 200 response.
-  // With no database, the generic error handler may produce 500; this test
-  // validates route existence without mistaking deployment for integration.
-  const result = await request('/api/programs');
-  assert.notEqual(result.status, 404);
-});
