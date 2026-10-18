@@ -10,7 +10,7 @@ import {
 } from "react-router-dom";
 
 import Enquiry from "./pages/Enquiry.jsx";
-
+import Login from "./pages/Login.jsx";
 function App() {
   return (
     <BrowserRouter>
@@ -38,4 +38,4 @@ createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
-import Login from "./pages/Login.jsx";
+
