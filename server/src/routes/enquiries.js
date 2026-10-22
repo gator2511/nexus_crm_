@@ -97,7 +97,7 @@ enquiryRouter.post('/', async (req, res, next) => {
           const sent = await sendEmail({
             to: stored.email,
             subject: 'Create your Nexus CRM student account',
-            text: `Hello ${stored.name},\\n\\nYour enquiry has been received. To create your student account and choose your password, open this private link within 24 hours:\\n${signupUrl.href}\\n\\nIf you did not request this, ignore this email.\\n\\nRIC Admissions Team`,
+            text: `Hello ${stored.name},\n\nYour enquiry has been received. To create your student account and choose your password, open this private link within 24 hours:\n${signupUrl.href}\n\nIf you did not request this, ignore this email.\n\nRIC Admissions Team`,
           });
           signupEmailStatus = sent.status;
         } catch (error) {
