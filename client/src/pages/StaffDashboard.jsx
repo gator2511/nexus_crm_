@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api.js';
+import ProgramCriteria from './ProgramCriteria.jsx';
 
 const labels = [
   'Enquiry', 'Qualification review', 'Qualified', 'Application',
@@ -107,6 +108,7 @@ export default function StaffDashboard() {
               </li>)}</ul>}
           </div>)}
       </section>
+      <ProgramCriteria />
       <section className="panel"><h2>Recent enquiries</h2>
         {!data.recentProspects?.length ? <p className="muted">No prospects recorded yet.</p> :
           <div className="table-scroll"><table><thead><tr><th>Student</th><th>Email</th><th>Stage</th><th>Created</th></tr></thead><tbody>
