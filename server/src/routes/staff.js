@@ -132,7 +132,7 @@ staffRouter.get('/pending-review', async (_req, res, next) => {
   try {
     const {rows} = await query(`
       SELECT p.id, p.full_name, p.email, p.stage,
-             q.auto_result AS qualification_result,
+             q.auto_result AS qualification_result, q.decision AS qualification_decision,
              COALESCE(COUNT(d.id) FILTER (WHERE d.status='Rejected'),0)::int AS rejected_documents,
              COALESCE(COUNT(d.id) FILTER (WHERE d.status='Pending'),0)::int AS pending_documents
       FROM prospect p
@@ -140,8 +140,8 @@ staffRouter.get('/pending-review', async (_req, res, next) => {
       LEFT JOIN application a ON a.prospect_id=p.id
       LEFT JOIN document d ON d.application_id=a.id AND d.issued=FALSE
       WHERE p.stage <> 'Closed'
-      GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result
-      HAVING q.auto_result IN ('Fail','Review')
+      GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result,q.decision
+      HAVING (q.auto_result IN ('Fail','Review') AND q.decision IS NULL)
           OR COUNT(d.id) FILTER (WHERE d.status IN ('Rejected','Pending') AND a.status IN ('Submitted','Under review')) > 0
       ORDER BY p.full_name
     `);
@@ -217,4 +217,35 @@ staffRouter.put('/program-criteria/:id', async (req,res,next) => {
     if(!result) return res.status(404).json({message:'Program not found'});
     res.json({program:result});
   } catch(error){next(error);}
+});
+
+staffRouter.post('/prospects/:id/qualification-decision',async(req,res,next)=>{
+  try{
+    const decision=req.body?.decision;
+    const note=typeof req.body?.note==='string'?req.body.note.trim():'';
+    if(!['Approved','Rejected'].includes(decision)||!note)
+      return res.status(422).json({message:'Decision and review note required'});
+    const {withTransaction}=await import('../db.js');
+    const updated=await withTransaction(async client=>{
+      const found=await client.query(`SELECT p.id,p.stage,q.id AS qualification_id,q.auto_result
+        FROM prospect p JOIN qualification q ON q.prospect_id=p.id
+        WHERE p.id=$1 FOR UPDATE OF p,q`,[req.params.id]);
+      if(!found.rowCount)return null;
+      const row=found.rows[0];
+      await client.query(`UPDATE qualification SET decision=$1,reviewed_by=$2,
+        review_note=$3,decided_at=NOW() WHERE id=$4`,
+        [decision,req.staff.id,note,row.qualification_id]);
+      if(decision==='Approved' && row.stage==='Qualification review'){
+        await client.query("UPDATE prospect SET stage='Qualified' WHERE id=$1",[row.id]);
+        await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
+          VALUES($1,'Qualification review','Qualified','staff',$2)`,[row.id,req.staff.id]);
+      }
+      await client.query(`INSERT INTO audit_log(prospect_id,actor_type,actor_id,action,detail)
+        VALUES($1,'staff',$2,'qualification_decision',$3::jsonb)`,
+        [row.id,req.staff.id,JSON.stringify({decision,note})]);
+      return {decision,stage:decision==='Approved'?'Qualified':row.stage};
+    });
+    if(!updated)return res.status(404).json({message:'Qualification record not found'});
+    res.json(updated);
+  }catch(error){next(error);}
 });
