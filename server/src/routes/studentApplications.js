@@ -35,6 +35,8 @@ studentApplicationsRouter.post('/application', async (req, res, next) => {
     const result = await withTransaction(async client => {
       const prospect = await currentProspect(client, req.student.id);
       if (!prospect) return { status: 404, message: 'Student prospect not found' };
+      const eligibility = await client.query(`SELECT auto_result,decision FROM qualification WHERE prospect_id=$1`,[prospect.id]);
+      if (!eligibility.rowCount || (eligibility.rows[0].auto_result !== 'Pass' && eligibility.rows[0].decision !== 'Approved') || eligibility.rows[0].decision === 'Rejected') return { status: 403, message: 'Stage 1 eligibility must be passed or approved by staff before applying' };
       const enquiry = await client.query(
         'SELECT program_id FROM enquiry WHERE prospect_id=$1 ORDER BY enquiry_date DESC LIMIT 1',
         [prospect.id]
@@ -77,6 +79,8 @@ studentApplicationsRouter.post('/application/submit', async (req, res, next) => 
     const result = await withTransaction(async client => {
       const prospect = await currentProspect(client, req.student.id);
       if (!prospect) return { errorCode: 404, message: 'Student prospect not found' };
+      const eligible = await client.query(`SELECT auto_result,decision FROM qualification WHERE prospect_id=$1`,[prospect.id]);
+      if (!eligible.rowCount || (eligible.rows[0].auto_result !== 'Pass' && eligible.rows[0].decision !== 'Approved') || eligible.rows[0].decision === 'Rejected') return {errorCode:403,message:'Eligibility approval required'};
       const found = await client.query(
         `SELECT a.id,a.status,q.highest_qualification,q.institution
          FROM application a LEFT JOIN qualification q ON q.prospect_id=a.prospect_id
@@ -104,7 +108,7 @@ studentApplicationsRouter.post('/application/submit', async (req, res, next) => 
         `UPDATE application SET status='Submitted',submitted_date=NOW() WHERE id=$1`, [app.id]
       );
       const stage = await client.query(
-        `UPDATE prospect SET stage='Application' WHERE id=$1 AND stage IN ('Qualified','Qualification review','Enquiry','Application')
+        `UPDATE prospect SET stage='Application' WHERE id=$1 AND stage IN ('Qualified','Qualification review','Application')
          RETURNING id`, [prospect.id]
       );
       if (stage.rowCount && prospect.stage !== 'Application') await client.query(
@@ -142,6 +146,8 @@ studentApplicationsRouter.post('/documents', async (req, res, next) => {
     const result = await withTransaction(async client => {
       const prospect = await currentProspect(client, req.student.id);
       if (!prospect) return { errorCode: 404, message: 'Student prospect not found' };
+      const eligible = await client.query(`SELECT auto_result,decision FROM qualification WHERE prospect_id=$1`,[prospect.id]);
+      if (!eligible.rowCount || (eligible.rows[0].auto_result !== 'Pass' && eligible.rows[0].decision !== 'Approved') || eligible.rows[0].decision === 'Rejected') return {errorCode:403,message:'Eligibility approval required'};
       const selected = await client.query(
         `SELECT id,program_id,status FROM application WHERE prospect_id=$1 AND status IN ('Draft','Submitted','Under review')
          ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [prospect.id]
@@ -187,4 +193,23 @@ studentApplicationsRouter.get('/documents', async (req, res, next) => {
     `,[req.student.id]);
     res.json({documents:rows});
   } catch (error) { next(error); }
+});
+
+studentApplicationsRouter.get('/application/status', async(req,res,next)=>{
+  try{
+    const prospect=await query('SELECT id,stage FROM prospect WHERE user_id=$1',[req.student.id]);
+    if(!prospect.rowCount)return res.status(404).json({message:'Student prospect not found'});
+    const id=prospect.rows[0].id;
+    const [q,app,required]=await Promise.all([
+      query('SELECT auto_result,decision FROM qualification WHERE prospect_id=$1',[id]),
+      query('SELECT id,program_id,status FROM application WHERE prospect_id=$1 ORDER BY created_at DESC LIMIT 1',[id]),
+      query(`SELECT pdt.document_type,pdt.is_required FROM program_document_type pdt
+        JOIN enquiry e ON e.program_id=pdt.program_id WHERE e.prospect_id=$1
+        ORDER BY e.enquiry_date DESC,pdt.document_type`,[id])
+    ]);
+    const qual=q.rows[0];
+    const eligible=!!qual && qual.decision!=='Rejected' && (qual.auto_result==='Pass'||qual.decision==='Approved');
+    res.json({eligible,eligibility:qual||null,application:app.rows[0]||null,
+      requiredDocuments:required.rows});
+  }catch(error){next(error);}
 });
