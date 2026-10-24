@@ -43,7 +43,7 @@ export default function Portal() {
     <section className="panel"><h2>Your profile</h2><p>Email: {student?.email || 'Not available'}</p>
       <p>Current recruitment stage: {student?.stage || 'Awaiting update'}</p></section>
     <EligibilitySection />
-    <section className="panel"><h2>Step 2 — Application and documents</h2><ApplicationSection /></section>
+    <section className="panel"><ApplicationSection /></section>
     <DocumentReviewStatus />
   </main>;
 }
