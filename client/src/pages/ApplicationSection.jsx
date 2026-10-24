@@ -4,8 +4,8 @@ import {validateDocument} from '../validation.js';
 
 export default function ApplicationSection(){
  const [info,setInfo]=useState(null),[form,setForm]=useState({date_of_birth:'',nationality:'',emergency_contact_name:'',emergency_contact_phone:'',intake_id:'',study_mode:''});
- const [files,setFiles]=useState({}),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- async function load(){try{const data=await apiRequest('/student/application/status');setInfo(data);if(data.application)setForm(previous=>({...previous,...Object.fromEntries(Object.keys(previous).map(k=>[k,k==='date_of_birth'&&data.application[k]?String(data.application[k]).slice(0,10):data.application[k]||'']))}));}catch(e){setError(e.message)}}
+ const [docs,setDocs]=useState([]),[files,setFiles]=useState({}),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ async function load(){try{const data=await apiRequest('/student/application/status');setInfo(data);const uploaded=await apiRequest('/student/documents');setDocs(uploaded.documents||[]);if(data.application)setForm(previous=>({...previous,...Object.fromEntries(Object.keys(previous).map(k=>[k,k==='date_of_birth'&&data.application[k]?String(data.application[k]).slice(0,10):data.application[k]||'']))}));}catch(e){setError(e.message)}}
  useEffect(()=>{load()},[]);
  async function save(e){e.preventDefault();setBusy(true);setError('');setMessage('');
   try{await apiRequest('/student/application',{method:'POST',body:JSON.stringify(form)});
@@ -43,7 +43,7 @@ export default function ApplicationSection(){
   <p>You meet the preliminary entry requirements. Complete your details and upload supporting documents to apply.</p>
   {!locked&&<form className="form-stack" onSubmit={save}>
     <h3>Enrolment details</h3>
-    <div className="grid-two">
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:"12px"}}>
       <label>Date of birth *<input required type="date" value={form.date_of_birth} onChange={e=>setForm(p=>({...p,date_of_birth:e.target.value}))}/></label>
       <label>Nationality *<input required value={form.nationality} onChange={e=>setForm(p=>({...p,nationality:e.target.value}))}/></label>
       <label>Emergency contact name *<input required value={form.emergency_contact_name} onChange={e=>setForm(p=>({...p,emergency_contact_name:e.target.value}))}/></label>
@@ -63,7 +63,7 @@ export default function ApplicationSection(){
    <h3>Documents</h3><p className="muted">PDF, JPG or PNG, up to 10 MB each.</p>
    {!info.requiredDocuments?.length?<p>No program document requirements are configured. Staff should confirm the checklist.</p>:
     <ul>{info.requiredDocuments.map(d=><li key={d.document_type}>
-      <strong>{d.document_type}</strong>{d.is_required?' (required)':' (optional)'}
+      <strong>{d.document_type}</strong>{d.is_required?' (required)':' (optional)'}<p className="muted">{docs.find(item=>item.document_type===d.document_type)?.status||'Not uploaded yet'}</p>
       {!locked&&<><input type="file" accept=".pdf,.jpg,.jpeg,.png" aria-label={'Upload '+d.document_type}
        onChange={e=>setFiles(p=>({...p,[d.document_type]:e.target.files?.[0]}))}/>
        <button type="button" disabled={busy||!files[d.document_type]} onClick={()=>upload(d.document_type)}>Upload document</button></>}
