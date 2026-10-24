@@ -3,9 +3,9 @@ import {apiRequest} from '../api.js';
 import {validateDocument} from '../validation.js';
 
 export default function ApplicationSection(){
- const [info,setInfo]=useState(null),[form,setForm]=useState({qualification:'',institution:'',graduationYear:''});
+ const [info,setInfo]=useState(null),[form,setForm]=useState({date_of_birth:'',nationality:'',emergency_contact_name:'',emergency_contact_phone:'',intake_id:'',study_mode:''});
  const [files,setFiles]=useState({}),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- async function load(){try{setInfo(await apiRequest('/student/application/status'));}catch(e){setError(e.message)}}
+ async function load(){try{const data=await apiRequest('/student/application/status');setInfo(data);if(data.application)setForm(previous=>({...previous,...Object.fromEntries(Object.keys(previous).map(k=>[k,k==='date_of_birth'&&data.application[k]?String(data.application[k]).slice(0,10):data.application[k]||'']))}));}catch(e){setError(e.message)}}
  useEffect(()=>{load()},[]);
  async function save(e){e.preventDefault();setBusy(true);setError('');setMessage('');
   try{await apiRequest('/student/application',{method:'POST',body:JSON.stringify(form)});
@@ -34,20 +34,33 @@ export default function ApplicationSection(){
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  if(!info)return <section><p>Loading application status…</p>{error&&<p role="alert" className="error">{error}</p>}</section>;
- if(!info.eligible)return <section><h2>Step 2 — Application and documents</h2>
+ if(!info.eligible)return <section><h2>Your application</h2>
    <p>Stage 2 is locked until you pass the preliminary assessment or staff approve your eligibility.</p>
    <button type="button" className="secondary" onClick={load}>Check eligibility status</button></section>;
  const locked=!!info.application&&info.application.status!=='Draft';
  return <section><h2>Step 2 — Application and documents</h2>
   <p className="muted">Application status: {info.application?.status||'Not started'}</p>
+  <p>You meet the preliminary entry requirements. Complete your details and upload supporting documents to apply.</p>
   {!locked&&<form className="form-stack" onSubmit={save}>
-   <label>Qualification title<input required value={form.qualification} onChange={e=>setForm(p=>({...p,qualification:e.target.value}))}/></label>
-   <label>Institution<input required value={form.institution} onChange={e=>setForm(p=>({...p,institution:e.target.value}))}/></label>
-   <label>Graduation year<input type="number" min="1950" max={new Date().getFullYear()+1} value={form.graduationYear} onChange={e=>setForm(p=>({...p,graduationYear:e.target.value}))}/></label>
-   <button disabled={busy}>{busy?'Saving…':'Save application draft'}</button>
+    <h3>Enrolment details</h3>
+    <div className="grid-two">
+      <label>Date of birth *<input required type="date" value={form.date_of_birth} onChange={e=>setForm(p=>({...p,date_of_birth:e.target.value}))}/></label>
+      <label>Nationality *<input required value={form.nationality} onChange={e=>setForm(p=>({...p,nationality:e.target.value}))}/></label>
+      <label>Emergency contact name *<input required value={form.emergency_contact_name} onChange={e=>setForm(p=>({...p,emergency_contact_name:e.target.value}))}/></label>
+      <label>Emergency contact phone *<input required type="tel" value={form.emergency_contact_phone} onChange={e=>setForm(p=>({...p,emergency_contact_phone:e.target.value}))}/></label>
+      <label>Intake *<select required value={form.intake_id} onChange={e=>setForm(p=>({...p,intake_id:e.target.value}))}>
+        <option value="">Select intake</option>
+        {(info.intakes||[]).map(i=><option key={i.id} value={i.id}>{i.name} (starts {String(i.start_date).slice(0,10)})</option>)}
+      </select></label>
+      <label>Study mode *<select required value={form.study_mode} onChange={e=>setForm(p=>({...p,study_mode:e.target.value}))}>
+        <option value="">Select study mode</option><option>On campus</option><option>Online</option><option>Blended</option>
+      </select></label>
+    </div>
+    {!info.intakes?.length&&<p className="error">No open intakes are configured for your program. Please contact admissions.</p>}
+    <button type="submit" disabled={busy||!info.intakes?.length}>{busy?'Saving…':'Save draft'}</button>
   </form>}
   {info.application&&<div>
-   <h3>Document checklist</h3>
+   <h3>Documents</h3><p className="muted">PDF, JPG or PNG, up to 10 MB each.</p>
    {!info.requiredDocuments?.length?<p>No program document requirements are configured. Staff should confirm the checklist.</p>:
     <ul>{info.requiredDocuments.map(d=><li key={d.document_type}>
       <strong>{d.document_type}</strong>{d.is_required?' (required)':' (optional)'}
@@ -55,7 +68,7 @@ export default function ApplicationSection(){
        onChange={e=>setFiles(p=>({...p,[d.document_type]:e.target.files?.[0]}))}/>
        <button type="button" disabled={busy||!files[d.document_type]} onClick={()=>upload(d.document_type)}>Upload document</button></>}
      </li>)}</ul>}
-   {!locked&&<button type="button" disabled={busy||!info.requiredDocuments?.length}
+   {!locked&&<button type="button" disabled={busy||!info.requiredDocuments?.length||!info.intakes?.length}
       onClick={submit}>{busy?'Submitting…':'Submit application for review'}</button>}
   </div>}
   {error&&<p role="alert" className="error">{error}</p>}
