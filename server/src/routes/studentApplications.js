@@ -143,11 +143,18 @@ studentApplicationsRouter.post('/documents', async (req, res, next) => {
       const prospect = await currentProspect(client, req.student.id);
       if (!prospect) return { errorCode: 404, message: 'Student prospect not found' };
       const selected = await client.query(
-        `SELECT id,program_id FROM application WHERE prospect_id=$1 AND status='Draft'
+        `SELECT id,program_id,status FROM application WHERE prospect_id=$1 AND status IN ('Draft','Submitted','Under review')
          ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [prospect.id]
       );
-      if (!selected.rows.length) return { errorCode: 409, message: 'Draft application required' };
+      if (!selected.rows.length) return { errorCode: 409, message: 'Draft or submitted application required' };
       const app = selected.rows[0];
+      if (app.status !== 'Draft') {
+        const replacement = await client.query(
+          "SELECT id FROM document WHERE application_id=$1 AND document_type=$2 AND status='Rejected' AND issued=FALSE",
+          [app.id, documentType]
+        );
+        if (!replacement.rowCount) return { errorCode: 409, message: 'Only rejected documents can be replaced after submission' };
+      }
       const allowed = await client.query(
         'SELECT id FROM program_document_type WHERE program_id=$1 AND document_type=$2',
         [app.program_id, documentType]
@@ -166,5 +173,18 @@ studentApplicationsRouter.post('/documents', async (req, res, next) => {
     });
     if (result.errorCode) return res.status(result.errorCode).json(result);
     return res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+studentApplicationsRouter.get('/documents', async (req, res, next) => {
+  try {
+    const {rows} = await query(`
+      SELECT d.id,d.document_type,d.file_name,d.status,d.rejection_reason,d.uploaded_at
+      FROM document d
+      JOIN application a ON a.id=d.application_id
+      JOIN prospect p ON p.id=a.prospect_id
+      WHERE p.user_id=$1 AND d.issued=FALSE ORDER BY d.uploaded_at DESC
+    `,[req.student.id]);
+    res.json({documents:rows});
   } catch (error) { next(error); }
 });
