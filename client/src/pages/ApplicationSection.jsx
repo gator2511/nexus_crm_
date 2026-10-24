@@ -27,6 +27,15 @@ export default function ApplicationSection(){
    setMessage(type+' uploaded for staff verification.');await load();
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
+ async function continueToReview(){
+  setBusy(true);setError('');setMessage('');
+  try{
+   await apiRequest('/student/application/continue',{method:'POST'});
+   setMessage('Your verified application has been sent for final admissions review.');
+   await load();
+  }catch(e){setError(e.message)}
+  finally{setBusy(false)}
+ }
  async function submit(){
   setBusy(true);setError('');setMessage('');
   try{await apiRequest('/student/application/submit',{method:'POST'});
@@ -71,6 +80,17 @@ export default function ApplicationSection(){
    {!locked&&<button type="button" disabled={busy||!info.requiredDocuments?.length||!info.intakes?.length}
       onClick={submit}>{busy?'Submitting…':'Submit application for review'}</button>}
   </div>}
+  {info.application?.status==='Submitted' && <>
+    {info.canContinue ?
+      <button type="button" disabled={busy} onClick={continueToReview}>
+        {busy?'Continuing…':'Continue to next stage'}
+      </button> :
+      <p className="muted">The next stage unlocks once staff verifies every required document.</p>}
+  </>}
+  {info.application?.status==='Under review'&&
+   <div role="status"><h3>Stage 3 — Final admissions review</h3>
+    <p>All required documents have been verified. Your application is now awaiting a final staff decision.</p>
+   </div>}
   {error&&<p role="alert" className="error">{error}</p>}
   {message&&<p role="status" className="success">{message}</p>}
   <button type="button" className="secondary" onClick={load}>Refresh application status</button>
