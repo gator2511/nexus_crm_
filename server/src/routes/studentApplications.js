@@ -16,62 +16,56 @@ async function currentProspect(client, userId) {
   return result.rows[0] || null;
 }
 
-function applicationDetails(body) {
-  const qualification = typeof body?.qualification === 'string' ? body.qualification.trim() : '';
-  const institution = typeof body?.institution === 'string' ? body.institution.trim() : '';
-  const year = body?.graduationYear;
-  const graduationYear = year === undefined || year === '' ? null : Number(year);
-  if (!qualification || !institution || (graduationYear !== null &&
-      (!Number.isInteger(graduationYear) || graduationYear < 1950 ||
-       graduationYear > new Date().getFullYear() + 1))) return null;
-  return { qualification, institution, graduationYear };
+function enrolmentDetails(body, complete=false) {
+  const fields=['nationality','emergency_contact_name','emergency_contact_phone'];
+  const out={};
+  for(const field of fields){
+    if(body?.[field]!==undefined && (typeof body[field]!=='string'||body[field].trim().length>150)) return null;
+    out[field]=typeof body?.[field]==='string' ? body[field].trim() : '';
+  }
+  const dob=body?.date_of_birth || '';
+  if(dob && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dob) || Number.isNaN(Date.parse(dob)) || dob>=new Date().toISOString().slice(0,10)))return null;
+  const intake=body?.intake_id || null;
+  if(intake && !UUID.test(intake))return null;
+  const study=body?.study_mode || null;
+  if(study && !['On campus','Online','Blended'].includes(study))return null;
+  if(complete && (!dob||!out.nationality||!out.emergency_contact_name||!out.emergency_contact_phone||!intake||!study))return null;
+  return {...out,date_of_birth:dob||null,intake_id:intake,study_mode:study};
 }
 
-/** Student sends qualification details as JSON; never changes staff-approved decisions. */
-studentApplicationsRouter.post('/application', async (req, res, next) => {
-  try {
-    const details = applicationDetails(req.body);
-    if (!details) return res.status(422).json({ message: 'Valid qualification and institution are required' });
-    const result = await withTransaction(async client => {
-      const prospect = await currentProspect(client, req.student.id);
-      if (!prospect) return { status: 404, message: 'Student prospect not found' };
-      const eligibility = await client.query(`SELECT auto_result,decision FROM qualification WHERE prospect_id=$1`,[prospect.id]);
-      if (!eligibility.rowCount || (eligibility.rows[0].auto_result !== 'Pass' && eligibility.rows[0].decision !== 'Approved') || eligibility.rows[0].decision === 'Rejected') return { status: 403, message: 'Stage 1 eligibility must be passed or approved by staff before applying' };
-      const enquiry = await client.query(
-        'SELECT program_id FROM enquiry WHERE prospect_id=$1 ORDER BY enquiry_date DESC LIMIT 1',
-        [prospect.id]
-      );
-      if (!enquiry.rows.length) return { status: 404, message: 'No program enquiry found' };
-      let existing = await client.query(
-        `SELECT id,status FROM application WHERE prospect_id=$1
-         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [prospect.id]
-      );
-      let app;
-      if (existing.rows.length) {
-        app = existing.rows[0];
-        if (app.status !== 'Draft') return { status: 409, message: 'Application already submitted' };
-      } else {
-        const created = await client.query(
-          'INSERT INTO application(prospect_id,program_id) VALUES($1,$2) RETURNING id,status',
-          [prospect.id, enquiry.rows[0].program_id]
-        );
-        app = created.rows[0];
+studentApplicationsRouter.post('/application', async (req,res,next)=>{
+  try{
+    const details=enrolmentDetails(req.body);
+    if(!details)return res.status(422).json({message:'Invalid enrolment details'});
+    const result=await withTransaction(async client=>{
+      const prospect=await currentProspect(client,req.student.id);
+      if(!prospect)return {errorCode:404,message:'Student prospect not found'};
+      const qual=await client.query('SELECT program_id,auto_result,decision FROM qualification WHERE prospect_id=$1',[prospect.id]);
+      if(!qual.rowCount || qual.rows[0].decision==='Rejected' ||
+         (qual.rows[0].auto_result!=='Pass' && qual.rows[0].decision!=='Approved'))
+        return {errorCode:403,message:'Eligibility approval required'};
+      const programId=qual.rows[0].program_id;
+      if(details.intake_id){
+        const check=await client.query('SELECT id FROM intake WHERE id=$1 AND program_id=$2 AND is_open=TRUE',[details.intake_id,programId]);
+        if(!check.rowCount)return {errorCode:422,message:'Choose an available intake for your program'};
       }
-      await client.query(
-        `INSERT INTO qualification(prospect_id,program_id,highest_qualification,institution,year_completed)
-         VALUES($1,$2,$3,$4,$5)
-         ON CONFLICT(prospect_id) DO UPDATE SET
-           highest_qualification=EXCLUDED.highest_qualification,
-           institution=EXCLUDED.institution,year_completed=EXCLUDED.year_completed`,
-        [prospect.id, enquiry.rows[0].program_id, details.qualification,
-          details.institution, details.graduationYear]
-      );
-      return { applicationId: app.id, status: app.status };
+      const existing=await client.query('SELECT id,status FROM application WHERE prospect_id=$1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE',[prospect.id]);
+      let app=existing.rows[0];
+      if(app && app.status!=='Draft')return {errorCode:409,message:'Application already submitted'};
+      if(!app){
+        const created=await client.query('INSERT INTO application(prospect_id,program_id) VALUES($1,$2) RETURNING id,status',[prospect.id,programId]);
+        app=created.rows[0];
+      }
+      await client.query(`UPDATE application SET date_of_birth=$1,nationality=$2,
+        emergency_contact_name=$3,emergency_contact_phone=$4,intake_id=$5,study_mode=$6
+        WHERE id=$7`,[details.date_of_birth,details.nationality,
+        details.emergency_contact_name,details.emergency_contact_phone,
+        details.intake_id,details.study_mode,app.id]);
+      return {applicationId:app.id,status:app.status};
     });
-    if (result.statusCode || typeof result.status === 'number')
-      return res.status(result.statusCode || result.status).json({ message: result.message });
-    return res.status(200).json(result);
-  } catch (error) { next(error); }
+    if(result.errorCode)return res.status(result.errorCode).json({message:result.message});
+    res.json(result);
+  }catch(err){next(err)}
 });
 
 studentApplicationsRouter.post('/application/submit', async (req, res, next) => {
@@ -82,7 +76,7 @@ studentApplicationsRouter.post('/application/submit', async (req, res, next) => 
       const eligible = await client.query(`SELECT auto_result,decision FROM qualification WHERE prospect_id=$1`,[prospect.id]);
       if (!eligible.rowCount || (eligible.rows[0].auto_result !== 'Pass' && eligible.rows[0].decision !== 'Approved') || eligible.rows[0].decision === 'Rejected') return {errorCode:403,message:'Eligibility approval required'};
       const found = await client.query(
-        `SELECT a.id,a.status,q.highest_qualification,q.institution
+        `SELECT a.*,q.highest_qualification,q.institution
          FROM application a LEFT JOIN qualification q ON q.prospect_id=a.prospect_id
          WHERE a.prospect_id=$1 ORDER BY a.created_at DESC LIMIT 1 FOR UPDATE OF a`,
         [prospect.id]
@@ -92,6 +86,7 @@ studentApplicationsRouter.post('/application/submit', async (req, res, next) => 
       if (app.status !== 'Draft') return { errorCode: 409, message: 'Application is not a draft' };
       if (!app.highest_qualification || !app.institution)
         return { errorCode: 422, message: 'Qualification details are incomplete' };
+      if(!enrolmentDetails(app,true))return {errorCode:422,message:'Complete all required enrolment fields before submission'};
       const required = await client.query(
         `SELECT pdt.document_type FROM program_document_type pdt
          JOIN application a ON a.program_id=pdt.program_id WHERE a.id=$1 AND pdt.is_required`,
@@ -200,19 +195,20 @@ studentApplicationsRouter.get('/application/status', async(req,res,next)=>{
     const prospect=await query('SELECT id,stage FROM prospect WHERE user_id=$1',[req.student.id]);
     if(!prospect.rowCount)return res.status(404).json({message:'Student prospect not found'});
     const id=prospect.rows[0].id;
-    const [q,app,required]=await Promise.all([
+    const [q,app,required,intakes]=await Promise.all([
       query('SELECT auto_result,decision FROM qualification WHERE prospect_id=$1',[id]),
-      query('SELECT id,program_id,status FROM application WHERE prospect_id=$1 ORDER BY created_at DESC LIMIT 1',[id]),
+      query('SELECT id,program_id,status,date_of_birth,nationality,emergency_contact_name,emergency_contact_phone,intake_id,study_mode FROM application WHERE prospect_id=$1 ORDER BY created_at DESC LIMIT 1',[id]),
       query(`SELECT pdt.document_type,pdt.is_required FROM program_document_type pdt
         WHERE pdt.program_id=(
           SELECT e.program_id FROM enquiry e WHERE e.prospect_id=$1
           ORDER BY e.enquiry_date DESC LIMIT 1
         )
-        ORDER BY pdt.document_type`,[id])
+        ORDER BY pdt.document_type`,[id]),
+      query(`SELECT i.id,i.name,i.start_date FROM intake i WHERE i.is_open=TRUE AND i.program_id=(SELECT program_id FROM qualification WHERE prospect_id=$1) ORDER BY i.start_date`,[id])
     ]);
     const qual=q.rows[0];
     const eligible=!!qual && qual.decision!=='Rejected' && (qual.auto_result==='Pass'||qual.decision==='Approved');
     res.json({eligible,eligibility:qual||null,application:app.rows[0]||null,
-      requiredDocuments:required.rows});
+      requiredDocuments:required.rows, intakes:intakes.rows});
   }catch(error){next(error);}
 });
