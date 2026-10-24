@@ -172,3 +172,49 @@ staffRouter.post('/documents/:id/verify', async (req, res, next) => {
     res.json(rows[0]);
   } catch (error) { next(error); }
 });
+
+/** Program entry thresholds. Only managers can change admissions criteria. */
+staffRouter.get('/program-criteria', async (_req,res,next) => {
+  try {
+    const {rows}=await query(`SELECT id,name,discipline,is_active,min_qualification_level,language_requirements
+      FROM program ORDER BY name,id`);
+    res.json({programs:rows});
+  } catch(error){next(error);}
+});
+
+staffRouter.put('/program-criteria/:id', async (req,res,next) => {
+  try {
+    if(req.staff.role!=='manager') return res.status(403).json({message:'Manager permission required'});
+    const level=req.body?.min_qualification_level;
+    const language=req.body?.language_requirements;
+    if(!Number.isInteger(level)||level<1||level>5||
+       !language||typeof language!=='object'||Array.isArray(language)||
+       Object.keys(language).some(k=>!['IELTS','PTE','TOEFL'].includes(k))||
+       !Object.keys(language).length)
+      return res.status(422).json({message:'Select qualification level 1–5 and at least one English threshold'});
+    const ranges={IELTS:[0,9],PTE:[0,90],TOEFL:[0,120]};
+    for(const [test,score] of Object.entries(language)){
+      if(typeof score!=='number'||!Number.isFinite(score)||score<ranges[test][0]||score>ranges[test][1])
+        return res.status(422).json({message:'Invalid score for '+test});
+    }
+    const {withTransaction}=await import('../db.js');
+    const result=await withTransaction(async client=>{
+      const previous=await client.query('SELECT * FROM program WHERE id=$1 FOR UPDATE',[req.params.id]);
+      if(!previous.rowCount) return null;
+      const updated=await client.query(`
+        UPDATE program SET min_qualification_level=$1,language_requirements=$2::jsonb
+        WHERE id=$3 RETURNING id,name,discipline,is_active,min_qualification_level,language_requirements
+      `,[level,JSON.stringify(language),req.params.id]);
+      await client.query(`
+        INSERT INTO audit_log(actor_type,actor_id,action,detail)
+        VALUES('staff',$1,'program_criteria_updated',$2::jsonb)
+      `,[req.staff.id,JSON.stringify({program_id:req.params.id,before:{
+        min_qualification_level:previous.rows[0].min_qualification_level,
+        language_requirements:previous.rows[0].language_requirements
+      },after:{min_qualification_level:level,language_requirements:language}})]);
+      return updated.rows[0];
+    });
+    if(!result) return res.status(404).json({message:'Program not found'});
+    res.json({program:result});
+  } catch(error){next(error);}
+});
