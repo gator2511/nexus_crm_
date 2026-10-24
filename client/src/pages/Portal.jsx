@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStudentProfile } from '../api.js';
 import ApplicationSection from './ApplicationSection.jsx';
+import DocumentReviewStatus from './DocumentReviewStatus.jsx';
 
 export default function Portal() {
   const navigate = useNavigate();
@@ -41,5 +42,6 @@ export default function Portal() {
     <section className="panel"><h2>Your profile</h2><p>Email: {student?.email || 'Not available'}</p>
       <p>Current recruitment stage: {student?.stage || 'Awaiting update'}</p></section>
     <section className="panel"><h2>Application</h2><ApplicationSection /></section>
+    <DocumentReviewStatus />
   </main>;
 }
