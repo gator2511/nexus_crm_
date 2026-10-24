@@ -23,7 +23,7 @@ function enrolmentDetails(body, complete=false) {
     if(body?.[field]!==undefined && (typeof body[field]!=='string'||body[field].trim().length>150)) return null;
     out[field]=typeof body?.[field]==='string' ? body[field].trim() : '';
   }
-  const dob=body?.date_of_birth || '';
+  const dob=body?.date_of_birth instanceof Date ? body.date_of_birth.toISOString().slice(0,10) : (body?.date_of_birth || '');
   if(dob && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dob) || Number.isNaN(Date.parse(dob)) || dob>=new Date().toISOString().slice(0,10)))return null;
   const intake=body?.intake_id || null;
   if(intake && !UUID.test(intake))return null;
