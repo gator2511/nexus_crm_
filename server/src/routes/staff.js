@@ -124,3 +124,51 @@ staffRouter.post('/documents/:id/reject', async(req,res,next) => {
     res.json(rows[0]);
   } catch(err){next(err);}
 });
+
+/** Work queue is derived from current qualification and document decisions.
+ * This avoids treating a correctable document rejection as academic ineligibility.
+ */
+staffRouter.get('/pending-review', async (_req, res, next) => {
+  try {
+    const {rows} = await query(`
+      SELECT p.id, p.full_name, p.email, p.stage,
+             q.auto_result AS qualification_result,
+             COALESCE(COUNT(d.id) FILTER (WHERE d.status='Rejected'),0)::int AS rejected_documents,
+             COALESCE(COUNT(d.id) FILTER (WHERE d.status='Pending'),0)::int AS pending_documents
+      FROM prospect p
+      LEFT JOIN qualification q ON q.prospect_id=p.id
+      LEFT JOIN application a ON a.prospect_id=p.id
+      LEFT JOIN document d ON d.application_id=a.id AND d.issued=FALSE
+      WHERE p.stage <> 'Closed'
+      GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result
+      HAVING q.auto_result IN ('Fail','Review')
+          OR COUNT(d.id) FILTER (WHERE d.status='Rejected') > 0
+      ORDER BY p.full_name
+    `);
+    res.json({prospects:rows});
+  } catch (error) { next(error); }
+});
+
+staffRouter.get('/prospects/:id/documents', async (req, res, next) => {
+  try {
+    const {rows} = await query(`
+      SELECT d.id,d.document_type,d.file_name,d.status,d.rejection_reason,d.uploaded_at,
+             a.status AS application_status
+      FROM document d JOIN application a ON a.id=d.application_id
+      WHERE a.prospect_id=$1 AND d.issued=FALSE ORDER BY d.uploaded_at DESC`,
+    [req.params.id]);
+    res.json({documents:rows});
+  } catch (error) { next(error); }
+});
+
+staffRouter.post('/documents/:id/verify', async (req, res, next) => {
+  try {
+    const {rows} = await query(`
+      UPDATE document SET status='Verified', rejection_reason=NULL,
+        verified_by=$1,verified_at=NOW()
+      WHERE id=$2 AND issued=FALSE AND status='Pending'
+      RETURNING id,status`,[req.staff.id,req.params.id]);
+    if (!rows.length) return res.status(409).json({message:'Pending student document not found'});
+    res.json(rows[0]);
+  } catch (error) { next(error); }
+});
