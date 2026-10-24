@@ -142,7 +142,7 @@ staffRouter.get('/pending-review', async (_req, res, next) => {
       WHERE p.stage <> 'Closed'
       GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result
       HAVING q.auto_result IN ('Fail','Review')
-          OR COUNT(d.id) FILTER (WHERE d.status='Rejected') > 0
+          OR COUNT(d.id) FILTER (WHERE d.status IN ('Rejected','Pending') AND a.status IN ('Submitted','Under review')) > 0
       ORDER BY p.full_name
     `);
     res.json({prospects:rows});
