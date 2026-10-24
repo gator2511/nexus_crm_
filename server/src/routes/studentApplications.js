@@ -208,7 +208,52 @@ studentApplicationsRouter.get('/application/status', async(req,res,next)=>{
     ]);
     const qual=q.rows[0];
     const eligible=!!qual && qual.decision!=='Rejected' && (qual.auto_result==='Pass'||qual.decision==='Approved');
-    res.json({eligible,eligibility:qual||null,application:app.rows[0]||null,
-      requiredDocuments:required.rows, intakes:intakes.rows});
+    const application=app.rows[0]||null;
+    let verifiedDocuments=false;
+    if(application && required.rows.some(d=>d.is_required)){
+      const docs=await query(`SELECT document_type,status FROM document
+        WHERE application_id=$1 AND issued=FALSE`,[application.id]);
+      verifiedDocuments=required.rows.filter(d=>d.is_required).every(d=>
+        docs.rows.some(doc=>doc.document_type===d.document_type && doc.status==='Verified'));
+    }
+    const canContinue=eligible && !!application &&
+      ['Submitted','Under review','Accepted'].includes(application.status) && verifiedDocuments;
+    res.json({eligible,eligibility:qual||null,application,
+      requiredDocuments:required.rows,intakes:intakes.rows,
+      verifiedDocuments,canContinue});
   }catch(error){next(error);}
+});
+
+/** Students can request final admissions review only after all required documents are verified. */
+studentApplicationsRouter.post('/application/continue',async(req,res,next)=>{
+  try{
+    const result=await withTransaction(async client=>{
+      const found=await client.query(`SELECT a.id,a.status,a.program_id,p.id AS prospect_id
+        FROM application a JOIN prospect p ON p.id=a.prospect_id
+        WHERE p.user_id=$1 ORDER BY a.created_at DESC LIMIT 1 FOR UPDATE OF a`,[req.student.id]);
+      if(!found.rowCount)return {errorCode:404,message:'Application not found'};
+      const app=found.rows[0];
+      if(app.status==='Under review')return {status:app.status};
+      if(app.status!=='Submitted')return {errorCode:409,message:'Submit your application before continuing'};
+      const q=await client.query(`SELECT auto_result,decision FROM qualification
+        WHERE prospect_id=$1`,[app.prospect_id]);
+      const eligibility=q.rows[0];
+      if(!eligibility||eligibility.decision==='Rejected'||
+        (eligibility.auto_result!=='Pass'&&eligibility.decision!=='Approved'))
+        return {errorCode:403,message:'Eligibility approval required'};
+      const docs=await client.query(`SELECT pdt.document_type,d.status
+        FROM program_document_type pdt LEFT JOIN document d
+        ON d.application_id=$1 AND d.document_type=pdt.document_type AND d.issued=FALSE
+        WHERE pdt.program_id=$2 AND pdt.is_required`,[app.id,app.program_id]);
+      if(!docs.rows.length || docs.rows.some(d=>d.status!=='Verified'))
+        return {errorCode:409,message:'All required documents must be verified before continuing'};
+      await client.query("UPDATE application SET status='Under review' WHERE id=$1",[app.id]);
+      await client.query(`INSERT INTO audit_log(prospect_id,actor_type,actor_id,action,detail)
+        VALUES($1,'student',$2,'requested_final_application_review',$3::jsonb)`,
+        [app.prospect_id,req.student.id,JSON.stringify({application_id:app.id})]);
+      return {status:'Under review'};
+    });
+    if(result.errorCode)return res.status(result.errorCode).json({message:result.message});
+    res.json(result);
+  }catch(error){next(error)}
 });
