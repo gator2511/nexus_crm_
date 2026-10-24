@@ -61,6 +61,18 @@ export default function StaffDashboard() {
       for (const id of openIds) await showDocuments(id);
     } catch (err) { setActionError(err.message); }
   }
+  async function reviewEligibility(prospectId,decision) {
+    const note=window.prompt('Enter the reason for this '+decision.toLowerCase()+' decision:');
+    if(!note?.trim()) return;
+    try {
+      setActionError('');
+      await apiRequest('/staff/prospects/'+prospectId+'/qualification-decision',{
+        method:'POST',headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')},
+        body:JSON.stringify({decision,note})
+      });
+      await load();
+    }catch(err){setActionError(err.message)}
+  }
   function logout() {
     sessionStorage.removeItem('nexus_staff_token');
     navigate('/staff/login', { replace: true });
@@ -97,6 +109,10 @@ export default function StaffDashboard() {
           <div key={p.id} className="panel">
             <strong>{p.full_name}</strong> — {p.email}
             <p>Qualification: {p.qualification_result || 'Not assessed'} · Rejected documents: {p.rejected_documents}</p>
+            {['Fail','Review'].includes(p.qualification_result) && !p.qualification_decision && <>
+              <button type="button" onClick={()=>reviewEligibility(p.id,'Approved')}>Approve eligibility</button>
+              <button type="button" className="secondary" onClick={()=>reviewEligibility(p.id,'Rejected')}>Reject eligibility</button>
+            </>}
             <button type="button" className="secondary" onClick={() => showDocuments(p.id)}>Review documents</button>
             {documents[p.id] && <ul>{documents[p.id].map(d =>
               <li key={d.id}>{d.document_type}: {d.status}
