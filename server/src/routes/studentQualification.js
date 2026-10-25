@@ -5,7 +5,7 @@
  */
 
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { assessQualification } from "../qualificationService.js";
 
 /**
@@ -69,10 +69,49 @@ export function createStudentQualificationRouter(requireStudent) {
         return res.status(400).json(assessment);
       }
 
+      const saved = await withTransaction(async client => {
+        const found = await client.query(
+          'SELECT id,stage FROM prospect WHERE user_id=$1 FOR UPDATE', [studentId]
+        );
+        if (!found.rowCount) return null;
+        const prospect = found.rows[0];
+        const details = req.body;
+        await client.query(`
+          INSERT INTO qualification
+            (prospect_id,program_id,highest_qualification,institution,year_completed,
+             result,language_test_type,language_score,test_date,intake_id,
+             submitted_at,auto_result,auto_reasons)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,$12::jsonb)
+          ON CONFLICT(prospect_id) DO UPDATE SET
+            program_id=EXCLUDED.program_id,
+            highest_qualification=EXCLUDED.highest_qualification,
+            institution=EXCLUDED.institution,year_completed=EXCLUDED.year_completed,
+            result=EXCLUDED.result,language_test_type=EXCLUDED.language_test_type,
+            language_score=EXCLUDED.language_score,test_date=EXCLUDED.test_date,
+            intake_id=EXCLUDED.intake_id,submitted_at=EXCLUDED.submitted_at,
+            auto_result=EXCLUDED.auto_result,auto_reasons=EXCLUDED.auto_reasons,
+            decision=NULL,reviewed_by=NULL,review_note=NULL,decided_at=NULL
+        `,[prospect.id,programId,details.highest_qualification || null,
+           details.institution || null, details.year_completed || null,
+           details.result || null, String(details.english_test).toUpperCase(),
+           Number(details.english_score),details.test_date || null,
+           details.intake_id || null,assessment.status,
+           JSON.stringify({reason:assessment.reason})]);
+        const target = assessment.status === 'Pass' ? 'Qualified' : 'Qualification review';
+        if (prospect.stage === 'Enquiry' || prospect.stage === 'Qualification review' ||
+            prospect.stage === 'Qualified') {
+          if (prospect.stage !== target) {
+            await client.query('UPDATE prospect SET stage=$1 WHERE id=$2',[target,prospect.id]);
+            await client.query(`
+              INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
+              VALUES($1,$2,$3,'student',$4)`,[prospect.id,prospect.stage,target,studentId]);
+          }
+        }
+        return {stage:target};
+      });
+      if (!saved) return res.status(404).json({message:'Student prospect not found'});
       return res.status(200).json({
-        programId,
-        assessment,
-        preliminary: true,
+        programId, assessment, preliminary:true, saved:true, stage:saved.stage
       });
     } catch (error) {
       next(error);

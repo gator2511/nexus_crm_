@@ -124,3 +124,128 @@ staffRouter.post('/documents/:id/reject', async(req,res,next) => {
     res.json(rows[0]);
   } catch(err){next(err);}
 });
+
+/** Work queue is derived from current qualification and document decisions.
+ * This avoids treating a correctable document rejection as academic ineligibility.
+ */
+staffRouter.get('/pending-review', async (_req, res, next) => {
+  try {
+    const {rows} = await query(`
+      SELECT p.id, p.full_name, p.email, p.stage,
+             q.auto_result AS qualification_result, q.decision AS qualification_decision,
+             COALESCE(COUNT(d.id) FILTER (WHERE d.status='Rejected'),0)::int AS rejected_documents,
+             COALESCE(COUNT(d.id) FILTER (WHERE d.status='Pending'),0)::int AS pending_documents
+      FROM prospect p
+      LEFT JOIN qualification q ON q.prospect_id=p.id
+      LEFT JOIN application a ON a.prospect_id=p.id
+      LEFT JOIN document d ON d.application_id=a.id AND d.issued=FALSE
+      WHERE p.stage <> 'Closed'
+      GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result,q.decision
+      HAVING (q.auto_result IN ('Fail','Review') AND q.decision IS NULL)
+          OR COUNT(d.id) FILTER (WHERE d.status IN ('Rejected','Pending') AND a.status IN ('Submitted','Under review')) > 0
+      ORDER BY p.full_name
+    `);
+    res.json({prospects:rows});
+  } catch (error) { next(error); }
+});
+
+staffRouter.get('/prospects/:id/documents', async (req, res, next) => {
+  try {
+    const {rows} = await query(`
+      SELECT d.id,d.document_type,d.file_name,d.status,d.rejection_reason,d.uploaded_at,
+             a.status AS application_status
+      FROM document d JOIN application a ON a.id=d.application_id
+      WHERE a.prospect_id=$1 AND d.issued=FALSE ORDER BY d.uploaded_at DESC`,
+    [req.params.id]);
+    res.json({documents:rows});
+  } catch (error) { next(error); }
+});
+
+staffRouter.post('/documents/:id/verify', async (req, res, next) => {
+  try {
+    const {rows} = await query(`
+      UPDATE document SET status='Verified', rejection_reason=NULL,
+        verified_by=$1,verified_at=NOW()
+      WHERE id=$2 AND issued=FALSE AND status='Pending'
+      RETURNING id,status`,[req.staff.id,req.params.id]);
+    if (!rows.length) return res.status(409).json({message:'Pending student document not found'});
+    res.json(rows[0]);
+  } catch (error) { next(error); }
+});
+
+/** Program entry thresholds. Only managers can change admissions criteria. */
+staffRouter.get('/program-criteria', async (_req,res,next) => {
+  try {
+    const {rows}=await query(`SELECT id,name,discipline,is_active,min_qualification_level,language_requirements
+      FROM program ORDER BY name,id`);
+    res.json({programs:rows});
+  } catch(error){next(error);}
+});
+
+staffRouter.put('/program-criteria/:id', async (req,res,next) => {
+  try {
+    if(req.staff.role!=='manager') return res.status(403).json({message:'Manager permission required'});
+    const level=req.body?.min_qualification_level;
+    const language=req.body?.language_requirements;
+    if(!Number.isInteger(level)||level<1||level>5||
+       !language||typeof language!=='object'||Array.isArray(language)||
+       Object.keys(language).some(k=>!['IELTS','PTE','TOEFL'].includes(k))||
+       !Object.keys(language).length)
+      return res.status(422).json({message:'Select qualification level 1–5 and at least one English threshold'});
+    const ranges={IELTS:[0,9],PTE:[0,90],TOEFL:[0,120]};
+    for(const [test,score] of Object.entries(language)){
+      if(typeof score!=='number'||!Number.isFinite(score)||score<ranges[test][0]||score>ranges[test][1])
+        return res.status(422).json({message:'Invalid score for '+test});
+    }
+    const {withTransaction}=await import('../db.js');
+    const result=await withTransaction(async client=>{
+      const previous=await client.query('SELECT * FROM program WHERE id=$1 FOR UPDATE',[req.params.id]);
+      if(!previous.rowCount) return null;
+      const updated=await client.query(`
+        UPDATE program SET min_qualification_level=$1,language_requirements=$2::jsonb
+        WHERE id=$3 RETURNING id,name,discipline,is_active,min_qualification_level,language_requirements
+      `,[level,JSON.stringify(language),req.params.id]);
+      await client.query(`
+        INSERT INTO audit_log(actor_type,actor_id,action,detail)
+        VALUES('staff',$1,'program_criteria_updated',$2::jsonb)
+      `,[req.staff.id,JSON.stringify({program_id:req.params.id,before:{
+        min_qualification_level:previous.rows[0].min_qualification_level,
+        language_requirements:previous.rows[0].language_requirements
+      },after:{min_qualification_level:level,language_requirements:language}})]);
+      return updated.rows[0];
+    });
+    if(!result) return res.status(404).json({message:'Program not found'});
+    res.json({program:result});
+  } catch(error){next(error);}
+});
+
+staffRouter.post('/prospects/:id/qualification-decision',async(req,res,next)=>{
+  try{
+    const decision=req.body?.decision;
+    const note=typeof req.body?.note==='string'?req.body.note.trim():'';
+    if(!['Approved','Rejected'].includes(decision)||!note)
+      return res.status(422).json({message:'Decision and review note required'});
+    const {withTransaction}=await import('../db.js');
+    const updated=await withTransaction(async client=>{
+      const found=await client.query(`SELECT p.id,p.stage,q.id AS qualification_id,q.auto_result
+        FROM prospect p JOIN qualification q ON q.prospect_id=p.id
+        WHERE p.id=$1 FOR UPDATE OF p,q`,[req.params.id]);
+      if(!found.rowCount)return null;
+      const row=found.rows[0];
+      await client.query(`UPDATE qualification SET decision=$1,reviewed_by=$2,
+        review_note=$3,decided_at=NOW() WHERE id=$4`,
+        [decision,req.staff.id,note,row.qualification_id]);
+      if(decision==='Approved' && row.stage==='Qualification review'){
+        await client.query("UPDATE prospect SET stage='Qualified' WHERE id=$1",[row.id]);
+        await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
+          VALUES($1,'Qualification review','Qualified','staff',$2)`,[row.id,req.staff.id]);
+      }
+      await client.query(`INSERT INTO audit_log(prospect_id,actor_type,actor_id,action,detail)
+        VALUES($1,'staff',$2,'qualification_decision',$3::jsonb)`,
+        [row.id,req.staff.id,JSON.stringify({decision,note})]);
+      return {decision,stage:decision==='Approved'?'Qualified':row.stage};
+    });
+    if(!updated)return res.status(404).json({message:'Qualification record not found'});
+    res.json(updated);
+  }catch(error){next(error);}
+});
