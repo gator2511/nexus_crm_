@@ -46,6 +46,34 @@ export default function StaffDashboard() {
       setDocuments(prev => ({...prev,[prospectId]:result.documents || []}));
     } catch (err) { setActionError(err.message); }
   }
+  async function viewDocument(docId) {
+    setActionError('');
+    try {
+      const response=await fetch('/api/staff/documents/'+docId+'/view',{
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')}
+      });
+      if(!response.ok)throw new Error('Unable to open document ('+response.status+')');
+      const file=await response.blob();
+      const url=URL.createObjectURL(file);
+      const tab=window.open(url,'_blank','noopener,noreferrer');
+      if(!tab){URL.revokeObjectURL(url);throw new Error('Allow pop-ups to preview student documents');}
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(err){setActionError(err.message)}
+  }
+  async function finalDecision(applicationId,decision) {
+    const note=window.prompt('Reason for final '+decision.toLowerCase()+' decision:');
+    if(!note?.trim())return;
+    try{
+      setActionError('');
+      await apiRequest('/staff/applications/'+applicationId+'/decision',{
+        method:'POST',
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')},
+        body:JSON.stringify({decision,note})
+      });
+      await load();
+      setDocuments({});
+    }catch(err){setActionError(err.message)}
+  }
   async function decide(docId, action) {
     const reason = action === 'reject' ? window.prompt('Explain why the student must replace this document:') : null;
     if (action === 'reject' && !reason?.trim()) return;
@@ -115,13 +143,23 @@ export default function StaffDashboard() {
             </>}
             <button type="button" className="secondary" onClick={() => showDocuments(p.id)}>Review documents</button>
             {documents[p.id] && <ul>{documents[p.id].map(d =>
-              <li key={d.id}>{d.document_type}: {d.status}
+              <li key={d.id}>{d.document_type}: {d.status} <button type="button" className="secondary" onClick={()=>viewDocument(d.id)}>View document</button>
                 {d.rejection_reason && <span> — {d.rejection_reason}</span>}
                 {d.status === 'Pending' && <>
                   <button type="button" onClick={() => decide(d.id,'verify')}>Verify</button>
                   <button type="button" className="secondary" onClick={() => decide(d.id,'reject')}>Reject</button>
                 </>}
               </li>)}</ul>}
+            {documents[p.id]?.some(d=>d.application_status==='Under review') && (()=>{
+              const appDocs=documents[p.id].filter(d=>d.application_status==='Under review');
+              const allVerified=appDocs.length>0 && appDocs.every(d=>d.status==='Verified');
+              const appId=appDocs[0]?.application_id;
+              return <div className="actions">
+                <button type="button" disabled={!allVerified} onClick={()=>finalDecision(appId,'Accepted')}>Final approve</button>
+                <button type="button" className="secondary" onClick={()=>finalDecision(appId,'Rejected')}>Final reject</button>
+                {!allVerified&&<p className="muted">Verify every document before final approval.</p>}
+              </div>;
+            })()}
           </div>)}
       </section>
       <ProgramCriteria />
