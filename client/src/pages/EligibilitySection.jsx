@@ -13,9 +13,23 @@ export default function EligibilitySection() {
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [result,setResult] = useState(null);
+  const [locked,setLocked] = useState(false);
+  const [loading,setLoading] = useState(true);
   useEffect(() => {
-    apiRequest('/programs').then(data => setPrograms(data.programs || []))
-      .catch(err => setError(err.message));
+    Promise.all([apiRequest('/programs'),apiRequest('/student/qualification/status')])
+      .then(([programData,status])=>{
+        setPrograms(programData.programs || []);
+        if(status.completed && status.qualification){
+          const q=status.qualification;
+          setLocked(true);
+          setForm({...initial,program_id:q.program_id || '',qualification_level:'',
+            highest_qualification:q.highest_qualification || '',institution:q.institution || '',
+            year_completed:q.year_completed || '',result:q.result || '',
+            english_test:q.english_test || 'IELTS',english_score:q.english_score ?? '',
+            test_date:q.test_date ? String(q.test_date).slice(0,10) : ''});
+          setResult({status:q.decision || q.auto_result,reason:q.auto_reasons?.reason || 'Saved assessment'});
+        }
+      }).catch(err => setError(err.message)).finally(()=>setLoading(false));
   },[]);
   function change(e) {setForm(previous => ({...previous,[e.target.name]:e.target.value}));setResult(null);}
   async function submit(e) {
@@ -29,13 +43,17 @@ export default function EligibilitySection() {
         })
       });
       setResult(data.assessment);
+      setLocked(true);
     } catch(err) {setError(err.message || 'Assessment could not be completed');}
     finally {setBusy(false);}
   }
   return <section className="panel">
     <h2>Step 1 — Academic and English eligibility</h2>
     <p className="muted">Enter your qualifications and English test score. Results are preliminary and subject to staff verification.</p>
+    {loading && <p role="status">Loading saved Stage 1 information…</p>}
+    {locked && <p role="status">Stage 1 completed — your saved information is locked. Continue with Step 2 below.</p>}
     <form className="form-stack" onSubmit={submit}>
+      <fieldset disabled={locked || loading || busy} style={{border:0,padding:0,margin:0,minWidth:0}}>
       <label>Enquired program
         <select required name="program_id" value={form.program_id} onChange={change}>
           <option value="">Select your program</option>
@@ -64,7 +82,8 @@ export default function EligibilitySection() {
         <input required type="number" step="0.1" min="0" name="english_score" value={form.english_score} onChange={change}/>
       </label>
       <label>Test date <input type="date" name="test_date" value={form.test_date} onChange={change}/></label>
-      <button disabled={busy || !programs.length}>{busy?'Assessing…':'Submit eligibility assessment'}</button>
+      {!locked && <button disabled={busy || !programs.length}>{busy?'Assessing…':'Submit eligibility assessment'}</button>}
+      </fieldset>
     </form>
     {error && <p role="alert" className="error">{error}</p>}
     {result && <div role="status">
