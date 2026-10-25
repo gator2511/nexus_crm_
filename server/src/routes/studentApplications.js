@@ -204,7 +204,12 @@ studentApplicationsRouter.get('/application/status', async(req,res,next)=>{
           ORDER BY e.enquiry_date DESC LIMIT 1
         )
         ORDER BY pdt.document_type`,[id]),
-      query(`SELECT i.id,i.name,i.start_date FROM intake i WHERE i.is_open=TRUE AND i.program_id=(SELECT program_id FROM qualification WHERE prospect_id=$1) ORDER BY i.start_date`,[id])
+      query(`SELECT i.id,i.name,i.start_date FROM intake i
+        WHERE i.is_open=TRUE AND i.program_id=COALESCE(
+          (SELECT a.program_id FROM application a WHERE a.prospect_id=$1 ORDER BY a.created_at DESC LIMIT 1),
+          (SELECT q.program_id FROM qualification q WHERE q.prospect_id=$1),
+          (SELECT e.program_id FROM enquiry e WHERE e.prospect_id=$1 ORDER BY e.enquiry_date DESC LIMIT 1)
+        ) ORDER BY i.start_date`,[id])
     ]);
     const qual=q.rows[0];
     const eligible=!!qual && qual.decision!=='Rejected' && (qual.auto_result==='Pass'||qual.decision==='Approved');
