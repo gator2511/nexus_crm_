@@ -118,7 +118,7 @@ staffRouter.post('/documents/:id/reject', async(req,res,next) => {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     if (!reason) return res.status(422).json({message:'Rejection reason required'});
     const {rows} = await query(`UPDATE document SET status='Rejected', rejection_reason=$1,
-      verified_by=$2,verified_at=NOW() WHERE id=$3 AND issued=FALSE
+      verified_by=$2,verified_at=NOW() WHERE id=$3 AND issued=FALSE AND status='Pending'
       RETURNING id,status`,[reason,req.staff.id,req.params.id]);
     if(!rows.length) return res.status(404).json({message:'Student document not found'});
     res.json(rows[0]);
@@ -142,7 +142,7 @@ staffRouter.get('/pending-review', async (_req, res, next) => {
       WHERE p.stage <> 'Closed'
       GROUP BY p.id,p.full_name,p.email,p.stage,q.auto_result,q.decision
       HAVING (q.auto_result IN ('Fail','Review') AND q.decision IS NULL)
-          OR COUNT(d.id) FILTER (WHERE d.status IN ('Rejected','Pending') AND a.status IN ('Submitted','Under review')) > 0
+          OR COUNT(d.id) FILTER (WHERE a.status IN ('Submitted','Under review')) > 0
       ORDER BY p.full_name
     `);
     res.json({prospects:rows});
@@ -153,7 +153,7 @@ staffRouter.get('/prospects/:id/documents', async (req, res, next) => {
   try {
     const {rows} = await query(`
       SELECT d.id,d.document_type,d.file_name,d.status,d.rejection_reason,d.uploaded_at,
-             a.status AS application_status
+             a.id AS application_id,a.status AS application_status
       FROM document d JOIN application a ON a.id=d.application_id
       WHERE a.prospect_id=$1 AND d.issued=FALSE ORDER BY d.uploaded_at DESC`,
     [req.params.id]);
@@ -248,4 +248,61 @@ staffRouter.post('/prospects/:id/qualification-decision',async(req,res,next)=>{
     if(!updated)return res.status(404).json({message:'Qualification record not found'});
     res.json(updated);
   }catch(error){next(error);}
+});
+
+/** Return actual document bytes only to authenticated staff. */
+staffRouter.get('/documents/:id/view', async(req,res,next)=>{
+  try{
+    const {rows}=await query(`SELECT file_name,mime_type,content
+      FROM document WHERE id=$1 AND issued=FALSE`,[req.params.id]);
+    if(!rows.length)return res.status(404).json({message:'Document not found'});
+    const doc=rows[0];
+    res.set('Content-Type',doc.mime_type);
+    res.set('Content-Disposition','inline; filename="student-document"');
+    res.set('Cache-Control','no-store');
+    res.set('X-Content-Type-Options','nosniff');
+    res.send(doc.content);
+  }catch(error){next(error)}
+});
+
+/** Staff's final decision is separate from verifying individual documents. */
+staffRouter.post('/applications/:id/decision',async(req,res,next)=>{
+  try{
+    const decision=req.body?.decision;
+    const note=typeof req.body?.note==='string'?req.body.note.trim():'';
+    if(!['Accepted','Rejected'].includes(decision)||!note)
+      return res.status(422).json({message:'Decision and justification are required'});
+    const {withTransaction}=await import('../db.js');
+    const result=await withTransaction(async client=>{
+      const {rows}=await client.query(`
+        SELECT a.id,a.status,a.program_id,a.prospect_id,p.stage
+        FROM application a JOIN prospect p ON p.id=a.prospect_id
+        WHERE a.id=$1 FOR UPDATE OF a,p`,[req.params.id]);
+      if(!rows.length)return {errorCode:404,message:'Application not found'};
+      const app=rows[0];
+      if(app.status!=='Under review')return {errorCode:409,message:'Application must be under final review'};
+      if(decision==='Accepted'){
+        const docs=await client.query(`
+          SELECT pdt.document_type,d.status
+          FROM program_document_type pdt LEFT JOIN document d
+            ON d.application_id=$1 AND d.document_type=pdt.document_type AND d.issued=FALSE
+          WHERE pdt.program_id=$2 AND pdt.is_required`,[app.id,app.program_id]);
+        if(!docs.rows.length||docs.rows.some(d=>d.status!=='Verified'))
+          return {errorCode:409,message:'All required documents must be verified before acceptance'};
+      }
+      await client.query(`UPDATE application SET status=$1,decision_by=$2,decision_note=$3,decided_at=NOW()
+        WHERE id=$4`,[decision,req.staff.id,note,app.id]);
+      if(decision==='Accepted' && app.stage==='Application'){
+        await client.query("UPDATE prospect SET stage='Offer' WHERE id=$1",[app.prospect_id]);
+        await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
+          VALUES($1,'Application','Offer','staff',$2)`,[app.prospect_id,req.staff.id]);
+      }
+      await client.query(`INSERT INTO audit_log(prospect_id,actor_type,actor_id,action,detail)
+        VALUES($1,'staff',$2,'application_decision',$3::jsonb)`,
+        [app.prospect_id,req.staff.id,JSON.stringify({application_id:app.id,decision,note})]);
+      return {status:decision};
+    });
+    if(result.errorCode)return res.status(result.errorCode).json({message:result.message});
+    res.json(result);
+  }catch(error){next(error)}
 });
