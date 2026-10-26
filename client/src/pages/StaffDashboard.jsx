@@ -15,6 +15,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
   const [review, setReview] = useState([]);
   const [documents, setDocuments] = useState({});
+  const [admissions,setAdmissions]=useState({});
   const [actionError, setActionError] = useState('');
 
   async function load() {
@@ -44,6 +45,10 @@ export default function StaffDashboard() {
         headers: {Authorization: 'Bearer ' + sessionStorage.getItem('nexus_staff_token')},
       });
       setDocuments(prev => ({...prev,[prospectId]:result.documents || []}));
+      const profile=await apiRequest('/staff/prospects/'+prospectId+'/admissions',{
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')}
+      });
+      setAdmissions(prev=>({...prev,[prospectId]:profile.admissions}));
     } catch (err) { setActionError(err.message); }
   }
   async function viewDocument(docId) {
@@ -72,6 +77,7 @@ export default function StaffDashboard() {
       });
       await load();
       setDocuments({});
+      setAdmissions({});
     }catch(err){setActionError(err.message)}
   }
   async function decide(docId, action) {
@@ -142,6 +148,16 @@ export default function StaffDashboard() {
               <button type="button" className="secondary" onClick={()=>reviewEligibility(p.id,'Rejected')}>Reject eligibility</button>
             </>}
             <button type="button" className="secondary" onClick={() => showDocuments(p.id)}>Review documents</button>
+            {admissions[p.id]&&<section aria-label="Student admissions details">
+              <h3>Student and application details</h3>
+              <p><strong>Contact:</strong> {admissions[p.id].email} · {admissions[p.id].phone}</p>
+              <p><strong>Program:</strong> {admissions[p.id].program_name} · <strong>Intake:</strong> {admissions[p.id].intake_name||'Not selected'}</p>
+              <p><strong>Qualification:</strong> {admissions[p.id].highest_qualification||'Not provided'} · {admissions[p.id].institution||''} · {admissions[p.id].year_completed||''}</p>
+              <p><strong>English:</strong> {admissions[p.id].language_test_type||'Not provided'} {admissions[p.id].language_score??''} · <strong>Eligibility:</strong> {admissions[p.id].auto_result||'Pending'}</p>
+              <p><strong>Application:</strong> {admissions[p.id].application_status||'Not started'} · <strong>Study mode:</strong> {admissions[p.id].study_mode||'Not selected'}</p>
+              <p><strong>Date of birth:</strong> {admissions[p.id].date_of_birth?String(admissions[p.id].date_of_birth).slice(0,10):'Not provided'} · <strong>Nationality:</strong> {admissions[p.id].nationality||'Not provided'}</p>
+              <p><strong>Emergency contact:</strong> {admissions[p.id].emergency_contact_name||'Not provided'} · {admissions[p.id].emergency_contact_phone||''}</p>
+            </section>}
             {documents[p.id] && <ul>{documents[p.id].map(d =>
               <li key={d.id}>{d.document_type}: {d.status} <button type="button" className="secondary" onClick={()=>viewDocument(d.id)}>View document</button>
                 {d.rejection_reason && <span> — {d.rejection_reason}</span>}
@@ -150,12 +166,12 @@ export default function StaffDashboard() {
                   <button type="button" className="secondary" onClick={() => decide(d.id,'reject')}>Reject</button>
                 </>}
               </li>)}</ul>}
-            {documents[p.id]?.some(d=>d.application_status==='Under review') && (()=>{
-              const appDocs=documents[p.id].filter(d=>d.application_status==='Under review');
+            {documents[p.id]?.some(d=>['Submitted','Under review'].includes(d.application_status)) && (()=>{
+              const appDocs=documents[p.id].filter(d=>['Submitted','Under review'].includes(d.application_status));
               const allVerified=appDocs.length>0 && appDocs.every(d=>d.status==='Verified');
               const appId=appDocs[0]?.application_id;
               return <div className="actions">
-                <button type="button" disabled={!allVerified} onClick={()=>finalDecision(appId,'Accepted')}>Final approve</button>
+                <button type="button" disabled={!allVerified} onClick={()=>finalDecision(appId,'Accepted')}>Accept and issue offer PDF</button>
                 <button type="button" className="secondary" onClick={()=>finalDecision(appId,'Rejected')}>Final reject</button>
                 {!allVerified&&<p className="muted">Verify every document before final approval.</p>}
               </div>;
