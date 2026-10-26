@@ -68,7 +68,7 @@ export default function Portal(){
     <div className="page-heading"><div><h1>Hi {journey?.full_name?.split(' ')[0]||'Student'}</h1>
       <p className="muted">{journey?.program_name||'Your course application'}</p></div>
       <button type="button" className="secondary" onClick={logout}>Log out</button></div>
-    <nav className="journey-progress" aria-label="Application progress">
+    <section className="student-welcome"><div><span className="eyebrow">YOUR ADMISSIONS JOURNEY</span><h2>{step===5?"Enrolment confirmed":step===4?"Your offer is ready":step===3?"Application in progress":"Your next step"}</h2><p>Track your progress and pick up exactly where you left off.</p></div><span className="journey-pill">Step {step+1} of 6</span></section><nav className="journey-progress" aria-label="Application progress">
       {STEPS.map((label,i)=><div key={label} className={'journey-step '+(i<step?'done':i===step?'current':'future')}
         aria-current={i===step?'step':undefined}>
         <span className="journey-marker">{i<step?'✓':i+1}</span>
