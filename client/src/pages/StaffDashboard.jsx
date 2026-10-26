@@ -113,9 +113,9 @@ export default function StaffDashboard() {
     navigate('/staff/login', { replace: true });
   }
 
-  return <main className="page wide">
+  return <main className="page wide staff-workspace">
     <div className="page-heading">
-      <div><h1>Recruitment dashboard</h1><p className="muted">Live prospect pipeline from Nexus CRM.</p></div>
+      <div><span className="eyebrow">ADMISSIONS WORKSPACE</span><h1>Recruitment dashboard</h1><p className="muted">Review applications, verify documents and track student progress.</p></div>
       <div className="actions"><button type="button" className="secondary" onClick={load}>Refresh</button>
       <button type="button" className="secondary" onClick={logout}>Sign out</button></div>
     </div>
@@ -137,7 +137,7 @@ export default function StaffDashboard() {
           <span>{label}</span><strong>{data.summary.stageCounts[label] || 0}</strong>
         </div>)}
       </div></section>
-      <section className="panel"><h2>Pending review</h2>
+      <section className="panel staff-review-panel"><h2>Pending review</h2>
         <p className="muted">Students needing academic review or document corrections.</p>
         {actionError && <p role="alert" className="error">{actionError}</p>}
         {!review.length ? <p>No pending review cases.</p> : review.map(p =>
