@@ -1,3 +1,4 @@
+import PDFDocument from 'pdfkit';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../db.js';
@@ -250,6 +251,64 @@ staffRouter.post('/prospects/:id/qualification-decision',async(req,res,next)=>{
   }catch(error){next(error);}
 });
 
+
+/** Generate a PDF from database-backed admissions fields. */
+function createOfferPdf(data,expiresAt){
+  return new Promise((resolve,reject)=>{
+    const pdf=new PDFDocument({size:'A4',margin:58});
+    const chunks=[];
+    pdf.on('data',chunk=>chunks.push(chunk));
+    pdf.on('error',reject);
+    pdf.on('end',()=>resolve(Buffer.concat(chunks)));
+    pdf.fontSize(23).fillColor('#244a91').text('RIC | OFFER OF ADMISSION');
+    pdf.moveDown(0.5).strokeColor('#d9e2f1').moveTo(58,pdf.y).lineTo(537,pdf.y).stroke();
+    pdf.moveDown(1).fillColor('#222').fontSize(11);
+    pdf.text('Issue date: '+new Date().toLocaleDateString('en-AU'));
+    pdf.text('Reference: '+data.application_id);
+    pdf.moveDown();
+    pdf.text('Dear '+data.full_name+',');
+    pdf.moveDown();
+    pdf.text('We are pleased to offer you admission to the following program, subject to the institution\'s enrolment terms and published policies.');
+    pdf.moveDown();
+    for(const [label,value] of [
+      ['Student name',data.full_name],['Student email',data.email],
+      ['Program',data.program_name],['Intake',data.intake_name],
+      ['Commencement',data.start_date?new Date(data.start_date).toLocaleDateString('en-AU'):'To be confirmed'],
+      ['Study mode',data.study_mode],['Offer valid until',new Date(expiresAt).toLocaleDateString('en-AU')]
+    ]) pdf.text(label+': '+(value||'Not specified'),{lineGap:5});
+    pdf.moveDown();
+    pdf.text('Log in to the Nexus CRM student portal to accept or decline this offer before the expiry date.');
+    pdf.moveDown(2);pdf.text('Admissions Team\nRIC');
+    pdf.end();
+  });
+}
+
+staffRouter.get('/prospects/:id/admissions',async(req,res,next)=>{
+  try{
+    const {rows}=await query(`
+      SELECT p.id,p.full_name,p.email,p.phone,p.address,p.stage,
+        pr.name AS program_name, q.highest_qualification,q.institution,
+        q.year_completed,q.result,q.language_test_type,q.language_score,
+        q.test_date,q.auto_result,q.decision AS qualification_decision,
+        a.id AS application_id,a.status AS application_status,a.date_of_birth,
+        a.nationality,a.emergency_contact_name,a.emergency_contact_phone,
+        a.study_mode,a.submitted_date,i.name AS intake_name,i.start_date
+      FROM prospect p
+      LEFT JOIN qualification q ON q.prospect_id=p.id
+      LEFT JOIN LATERAL (
+        SELECT * FROM application WHERE prospect_id=p.id ORDER BY created_at DESC LIMIT 1
+      ) a ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT program_id FROM enquiry WHERE prospect_id=p.id ORDER BY enquiry_date DESC LIMIT 1
+      ) e ON TRUE
+      LEFT JOIN program pr ON pr.id=COALESCE(a.program_id,q.program_id,e.program_id)
+      LEFT JOIN intake i ON i.id=a.intake_id
+      WHERE p.id=$1`,[req.params.id]);
+    if(!rows.length)return res.status(404).json({message:'Student not found'});
+    res.json({admissions:rows[0]});
+  }catch(error){next(error)}
+});
+
 /** Return actual document bytes only to authenticated staff. */
 staffRouter.get('/documents/:id/view', async(req,res,next)=>{
   try{
@@ -271,31 +330,49 @@ staffRouter.post('/applications/:id/decision',async(req,res,next)=>{
     const decision=req.body?.decision;
     const note=typeof req.body?.note==='string'?req.body.note.trim():'';
     if(!['Accepted','Rejected'].includes(decision)||!note)
-      return res.status(422).json({message:'Decision and justification are required'});
+      return res.status(422).json({message:'Decision and justification required'});
     const {withTransaction}=await import('../db.js');
     const result=await withTransaction(async client=>{
-      const {rows}=await client.query(`
-        SELECT a.id,a.status,a.program_id,a.prospect_id,p.stage
+      const found=await client.query(`
+        SELECT a.*,p.stage,p.id AS prospect_id,p.full_name,p.email,
+          pr.name AS program_name,i.name AS intake_name,i.start_date
         FROM application a JOIN prospect p ON p.id=a.prospect_id
+        JOIN program pr ON pr.id=a.program_id
+        LEFT JOIN intake i ON i.id=a.intake_id
         WHERE a.id=$1 FOR UPDATE OF a,p`,[req.params.id]);
-      if(!rows.length)return {errorCode:404,message:'Application not found'};
-      const app=rows[0];
-      if(app.status!=='Under review')return {errorCode:409,message:'Application must be under final review'};
+      if(!found.rowCount)return {errorCode:404,message:'Application not found'};
+      const app=found.rows[0];
+      if(!['Submitted','Under review'].includes(app.status))
+        return {errorCode:409,message:'Application must be submitted and awaiting review'};
       if(decision==='Accepted'){
         const docs=await client.query(`
-          SELECT pdt.document_type,d.status
-          FROM program_document_type pdt LEFT JOIN document d
-            ON d.application_id=$1 AND d.document_type=pdt.document_type AND d.issued=FALSE
+          SELECT pdt.document_type,d.status FROM program_document_type pdt
+          LEFT JOIN document d ON d.application_id=$1
+            AND d.document_type=pdt.document_type AND d.issued=FALSE
           WHERE pdt.program_id=$2 AND pdt.is_required`,[app.id,app.program_id]);
         if(!docs.rows.length||docs.rows.some(d=>d.status!=='Verified'))
-          return {errorCode:409,message:'All required documents must be verified before acceptance'};
-      }
-      await client.query(`UPDATE application SET status=$1,decision_by=$2,decision_note=$3,decided_at=NOW()
-        WHERE id=$4`,[decision,req.staff.id,note,app.id]);
-      if(decision==='Accepted' && app.stage==='Application'){
-        await client.query("UPDATE prospect SET stage='Offer' WHERE id=$1",[app.prospect_id]);
-        await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
-          VALUES($1,'Application','Offer','staff',$2)`,[app.prospect_id,req.staff.id]);
+          return {errorCode:409,message:'Verify all required documents before issuing an offer'};
+        if(!app.intake_id||!app.study_mode)
+          return {errorCode:409,message:'Application intake and study mode are required'};
+        const expires=new Date(Date.now()+14*24*60*60*1000);
+        const pdf=await createOfferPdf({...app,application_id:app.id},expires);
+        await client.query(`INSERT INTO document(application_id,document_type,issued,file_name,mime_type,size_bytes,content,status,verified_by,verified_at)
+          VALUES($1,'Offer letter',TRUE,'RIC-offer.pdf','application/pdf',$2,$3,'Verified',$4,NOW())`,
+          [app.id,pdf.length,pdf,req.staff.id]);
+        await client.query(`UPDATE application
+          SET status='Accepted',decision_by=$1,decision_note=$2,decided_at=NOW(),offer_expires_at=$3
+          WHERE id=$4`,[req.staff.id,note,expires,app.id]);
+        if(app.stage!=='Offer'){
+          await client.query("UPDATE prospect SET stage='Offer' WHERE id=$1",[app.prospect_id]);
+          await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,changed_by_type,changed_by_id)
+            VALUES($1,$2,'Offer','staff',$3)`,[app.prospect_id,app.stage,req.staff.id]);
+        }
+      }else{
+        await client.query(`UPDATE application SET status='Rejected',decision_by=$1,decision_note=$2,decided_at=NOW()
+          WHERE id=$3`,[req.staff.id,note,app.id]);
+        await client.query("UPDATE prospect SET stage='Closed',closed_reason='Application rejected' WHERE id=$1",[app.prospect_id]);
+        await client.query(`INSERT INTO stage_history(prospect_id,from_stage,to_stage,closed_reason,changed_by_type,changed_by_id)
+          VALUES($1,$2,'Closed','Application rejected','staff',$3)`,[app.prospect_id,app.stage,req.staff.id]);
       }
       await client.query(`INSERT INTO audit_log(prospect_id,actor_type,actor_id,action,detail)
         VALUES($1,'staff',$2,'application_decision',$3::jsonb)`,
