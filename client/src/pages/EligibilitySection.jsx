@@ -7,7 +7,7 @@ const initial = {program_id:'',qualification_level:'',highest_qualification:'',
 const levels = [
   [1,'Year 12'],[2,'Certificate'],[3,'Diploma'],[4,'Bachelor'],[5,'Master']
 ];
-export default function EligibilitySection() {
+export default function EligibilitySection({onCompleted}) {
   const [form,setForm] = useState(initial);
   const [programs,setPrograms] = useState([]);
   const [busy,setBusy] = useState(false);
@@ -44,6 +44,7 @@ export default function EligibilitySection() {
       });
       setResult(data.assessment);
       setLocked(true);
+      await onCompleted?.();
     } catch(err) {setError(err.message || 'Assessment could not be completed');}
     finally {setBusy(false);}
   }
