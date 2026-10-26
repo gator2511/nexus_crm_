@@ -42,6 +42,12 @@ export default function Portal(){
       await refresh();
     }catch(e){setActionError(e.message)}finally{setAccepting(false)}
   }
+  async function declineOffer(){
+    if(!window.confirm('Decline your admission offer? This will close your application.'))return;
+    setAccepting(true);setActionError('');
+    try{await apiRequest('/student/offer/decline',{method:'POST'});await refresh();}
+    catch(e){setActionError(e.message)}finally{setAccepting(false)}
+  }
   async function downloadOffer(){
     setActionError('');
     try{
@@ -85,10 +91,11 @@ export default function Portal(){
     step===4?<section className="panel"><h2>Your offer</h2>
       <p>Your application has been accepted. Download your offer letter and accept it to complete enrolment.</p>
       <div className="actions"><button type="button" className="secondary" onClick={downloadOffer}>Download offer letter</button>
-      <button type="button" disabled={accepting} onClick={acceptOffer}>{accepting?'Accepting…':'Accept offer'}</button></div>
+      <button type="button" disabled={accepting} onClick={acceptOffer}>{accepting?'Processing…':'Accept offer'}</button>
+      <button type="button" className="secondary" disabled={accepting} onClick={declineOffer}>Decline offer</button></div>
       {actionError&&<p role="alert" className="error">{actionError}</p>}
     </section>:
-    <section className="panel"><h2>Enrolment complete</h2><p>Your offer has been accepted and your enrolment is recorded.</p></section>}
+    <section className="panel"><h2>You are enrolled</h2><p>Your offer has been accepted and your enrolment is recorded. Welcome to RIC.</p><button type="button" className="secondary" onClick={downloadOffer}>Download offer letter (PDF)</button></section>}
     {step>=2&&step<5&&<button type="button" className="secondary" onClick={()=>refresh().catch(e=>setActionError(e.message))}>Refresh progress</button>}
     {actionError&&step!==4&&<p role="alert" className="error">{actionError}</p>}
   </main>;
