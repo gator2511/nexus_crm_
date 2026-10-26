@@ -2,14 +2,14 @@ import React,{useEffect,useState} from 'react';
 import {apiRequest} from '../api.js';
 import {validateDocument} from '../validation.js';
 
-export default function ApplicationSection(){
+export default function ApplicationSection({onUpdated}){
  const [info,setInfo]=useState(null),[form,setForm]=useState({date_of_birth:'',nationality:'',emergency_contact_name:'',emergency_contact_phone:'',intake_id:'',study_mode:''});
  const [docs,setDocs]=useState([]),[files,setFiles]=useState({}),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  async function load(){try{const data=await apiRequest('/student/application/status');setInfo(data);const uploaded=await apiRequest('/student/documents');setDocs(uploaded.documents||[]);if(data.application)setForm(previous=>({...previous,...Object.fromEntries(Object.keys(previous).map(k=>[k,k==='date_of_birth'&&data.application[k]?String(data.application[k]).slice(0,10):data.application[k]||'']))}));}catch(e){setError(e.message)}}
  useEffect(()=>{load()},[]);
  async function save(e){e.preventDefault();setBusy(true);setError('');setMessage('');
   try{await apiRequest('/student/application',{method:'POST',body:JSON.stringify(form)});
-   setMessage('Application draft saved. Upload all required documents.');await load();
+   setMessage('Application draft saved. Upload all required documents.');await load();await onUpdated?.();
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  async function upload(type){
@@ -32,14 +32,14 @@ export default function ApplicationSection(){
   try{
    await apiRequest('/student/application/continue',{method:'POST'});
    setMessage('Your verified application has been sent for final admissions review.');
-   await load();
+   await load();await onUpdated?.();
   }catch(e){setError(e.message)}
   finally{setBusy(false)}
  }
  async function submit(){
   setBusy(true);setError('');setMessage('');
   try{await apiRequest('/student/application/submit',{method:'POST'});
-   setMessage('Application submitted successfully. Staff will verify your documents.');await load();
+   setMessage('Application submitted successfully. Staff will verify your documents.');await load();await onUpdated?.();
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  if(!info)return <section><p>Loading application status…</p>{error&&<p role="alert" className="error">{error}</p>}</section>;
