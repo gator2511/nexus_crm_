@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { withTransaction, query } from '../db.js';
 import { requireStudent } from '../auth.js';
+import {sendEmail} from '../email.js';
 
 export const studentOffersRouter = Router();
 studentOffersRouter.use(requireStudent);
@@ -26,8 +27,10 @@ studentOffersRouter.post('/offer/accept', async (req, res, next) => {
   try {
     const result = await withTransaction(async client => {
       const found = await client.query(
-        `SELECT a.id,a.offer_expires_at,p.id AS prospect_id,p.stage
+        `SELECT a.id,a.offer_expires_at,p.id AS prospect_id,p.stage,p.full_name,p.email,pr.name AS program_name,i.name AS intake_name,i.start_date
          FROM application a JOIN prospect p ON p.id=a.prospect_id
+         JOIN program pr ON pr.id=a.program_id
+         LEFT JOIN intake i ON i.id=a.intake_id
          WHERE p.user_id=$1 AND a.status='Accepted'
          ORDER BY a.created_at DESC LIMIT 1 FOR UPDATE OF a,p`, [req.student.id]
       );
@@ -50,10 +53,30 @@ studentOffersRouter.post('/offer/accept', async (req, res, next) => {
          VALUES($1,$2,'Enrolled','student',$3)`,
         [offer.prospect_id, offer.stage, req.student.id]
       );
-      return { status: 'Enrolled', enrolmentId: enrolment.rows[0].id };
+      return { status: 'Enrolled', enrolmentId: enrolment.rows[0].id,
+        prospectId:offer.prospect_id,fullName:offer.full_name,email:offer.email,
+        programName:offer.program_name,intakeName:offer.intake_name };
     });
     if (result.errorCode) return res.status(result.errorCode).json(result);
-    return res.status(200).json(result);
+    // Enrolment is committed before any external email request.
+    let emailStatus='Failed';
+    try{
+      const delivery=await sendEmail({
+        to:result.email,
+        subject:'Your enrolment is confirmed — Nexus CRM',
+        text:`Hello ${result.fullName},\n\nCongratulations! Your acceptance has been recorded and your enrolment is confirmed.\n\nProgram: ${result.programName}\nIntake: ${result.intakeName||'Please contact admissions'}\n\nYou can sign in to your student portal to download your offer letter and review your enrolment status.\n\nWelcome to RIC!\nAdmissions Team`
+      });
+      emailStatus=delivery.status;
+    }catch(error){console.error('Enrolment email delivery failed:',error);}
+    try{
+      await query(`INSERT INTO email_log(prospect_id,template,to_email,subject,body,status)
+        VALUES($1,'Enrolment confirmation',$2,$3,$4,$5)`,[
+        result.prospectId,result.email,'Your enrolment is confirmed — Nexus CRM',
+        'Enrolment confirmation for '+result.programName,
+        emailStatus==='Sent'?'Sent':emailStatus==='NotConfigured'?'Logged':'Failed'
+      ]);
+    }catch(error){console.error('Enrolment email log failed:',error);}
+    return res.status(200).json({status:result.status,enrolmentId:result.enrolmentId,emailStatus});
   } catch (error) { next(error); }
 });
 
