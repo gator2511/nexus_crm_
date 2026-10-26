@@ -53,6 +53,8 @@ export default function StaffDashboard() {
   }
   async function viewDocument(docId) {
     setActionError('');
+    const tab=window.open('about:blank','_blank');
+    if(!tab){setActionError('Allow pop-ups to preview student documents');return;}
     try {
       const response=await fetch('/api/staff/documents/'+docId+'/view',{
         headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')}
@@ -60,10 +62,9 @@ export default function StaffDashboard() {
       if(!response.ok)throw new Error('Unable to open document ('+response.status+')');
       const file=await response.blob();
       const url=URL.createObjectURL(file);
-      const tab=window.open(url,'_blank','noopener,noreferrer');
-      if(!tab){URL.revokeObjectURL(url);throw new Error('Allow pop-ups to preview student documents');}
+      tab.location.href=url;
       setTimeout(()=>URL.revokeObjectURL(url),60000);
-    }catch(err){setActionError(err.message)}
+    }catch(err){tab.close();setActionError(err.message)}
   }
   async function finalDecision(applicationId,decision) {
     const note=window.prompt('Reason for final '+decision.toLowerCase()+' decision:');
