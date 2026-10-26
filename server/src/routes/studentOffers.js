@@ -11,7 +11,7 @@ studentOffersRouter.get('/offer', async (req, res, next) => {
       `SELECT d.content,d.file_name,d.mime_type FROM document d
        JOIN application a ON a.id=d.application_id
        JOIN prospect p ON p.id=a.prospect_id
-       WHERE p.user_id=$1 AND a.status='Accepted' AND d.issued=TRUE
+       WHERE p.user_id=$1 AND (a.status='Accepted' OR EXISTS (SELECT 1 FROM enrolment en WHERE en.application_id=a.id)) AND d.issued=TRUE
          AND d.mime_type='application/pdf' AND d.document_type='Offer letter'
        ORDER BY d.uploaded_at DESC LIMIT 1`, [req.student.id]
     );
