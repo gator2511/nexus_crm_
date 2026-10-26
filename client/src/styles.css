@@ -17,3 +17,17 @@ h1{font-size:clamp(1.6rem,3vw,2.2rem);margin:0 0 12px} h2{font-size:1.2rem;margi
 .pipeline-item{display:flex;justify-content:space-between;border:1px solid #e3eaf3;border-radius:8px;padding:12px}
 .table-scroll{overflow:auto} table{border-collapse:collapse;width:100%;text-align:left} th,td{padding:12px;border-bottom:1px solid #e3eaf3} th{color:#50617a}
 @media(max-width:600px){.panel{padding:18px}.site-header{padding:14px 20px}}
+
+/* Student journey — persistent six-step admissions progress */
+.student-journey{max-width:820px}
+.journey-progress{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin:28px 0 32px;position:relative;gap:0}
+.journey-step{position:relative;display:flex;align-items:center;flex-direction:column;gap:8px;text-align:center;color:#7b899a;font-size:.78rem;min-width:0}
+.journey-step:not(:last-child)::after{content:"";position:absolute;top:17px;left:calc(50% + 20px);right:calc(-50% + 20px);height:2px;background:#dce2e9}
+.journey-step.done:not(:last-child)::after{background:#2758aa}
+.journey-marker{height:36px;width:36px;border:2px solid #dce2e9;border-radius:50%;display:grid;place-items:center;background:white;font-weight:700;z-index:1}
+.journey-step.done .journey-marker{background:#2758aa;color:white;border-color:#2758aa}
+.journey-step.current .journey-marker{border-color:#2758aa;color:#2758aa}
+.journey-step.current{color:#173867;font-weight:700}
+.journey-label{overflow-wrap:anywhere}
+.student-journey .panel{padding:26px}
+@media(max-width:520px){.journey-marker{height:29px;width:29px}.journey-step:not(:last-child)::after{top:14px;left:calc(50% + 16px);right:calc(-50% + 16px)}.journey-step{font-size:.64rem}.student-journey .panel{padding:17px}}
