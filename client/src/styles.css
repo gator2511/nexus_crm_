@@ -31,3 +31,50 @@ h1{font-size:clamp(1.6rem,3vw,2.2rem);margin:0 0 12px} h2{font-size:1.2rem;margi
 .journey-label{overflow-wrap:anywhere}
 .student-journey .panel{padding:26px}
 @media(max-width:520px){.journey-marker{height:29px;width:29px}.journey-step:not(:last-child)::after{top:14px;left:calc(50% + 16px);right:calc(-50% + 16px)}.journey-step{font-size:.64rem}.student-journey .panel{padding:17px}}
+
+/* 2026 student and staff experience refinements */
+:root{--navy:#102a52;--blue:#285fba;--line:#e2eaf4;--surface:#fff;--soft:#f5f8fd}
+body{background:linear-gradient(180deg,#f5f8fe 0%,#eef3fa 100%);min-height:100vh}
+.site-header{box-shadow:0 1px 12px #152b4d08}
+.panel,.stat{box-shadow:0 9px 30px #17345a0b}
+.panel{border-color:var(--line)}
+button{transition:background .15s ease,transform .15s ease,box-shadow .15s ease}
+button:not(:disabled):hover{filter:brightness(.94);box-shadow:0 3px 11px #193b7326}
+button:not(:disabled):active{transform:translateY(1px)}
+button:focus-visible,a:focus-visible{outline:3px solid #76a9f7;outline-offset:3px}
+button:disabled{cursor:not-allowed}
+.eyebrow{letter-spacing:.13em;text-transform:uppercase;font-size:.72rem;font-weight:800;color:#4170b8}
+.auth-layout{max-width:1120px;margin:52px auto;padding:0 24px;display:grid;grid-template-columns:minmax(0,1fr) minmax(350px,450px);align-items:stretch;gap:0;filter:drop-shadow(0 18px 36px #1b355620)}
+.auth-story{padding:58px 50px;background:linear-gradient(145deg,#0e2b54 5%,#255cae 100%);border-radius:22px 0 0 22px;color:white;display:flex;flex-direction:column;justify-content:center;min-height:505px}
+.auth-story .eyebrow{color:#acd2ff}
+.auth-story h1{font-size:clamp(2.2rem,4vw,3.3rem);line-height:1.13;letter-spacing:-.04em;margin:25px 0 18px}
+.auth-story p{color:#dceafb;line-height:1.75;max-width:450px}
+.auth-story-steps{display:flex;gap:10px;flex-wrap:wrap;margin-top:40px}
+.auth-story-steps span{border:1px solid #ffffff55;background:#ffffff19;padding:8px 12px;border-radius:40px;font-size:.83rem}
+.auth-card{padding:56px 43px;background:#fff;border:1px solid var(--line);border-radius:0 22px 22px 0;display:flex;flex-direction:column;justify-content:center}
+.auth-card h1,.auth-card h2{font-size:2rem;letter-spacing:-.035em;margin:14px 0 5px;color:var(--navy)}
+.auth-card .muted{line-height:1.55;margin:5px 0 30px}
+.auth-card label{font-size:.9rem;color:#243b5b}
+.auth-card input{min-height:48px}
+.auth-submit{min-height:48px;margin-top:5px}
+.password-field{position:relative;display:block}
+.password-field input{padding-right:70px!important}
+.password-toggle{position:absolute;right:6px;top:6px;background:transparent;border:0;color:#285fba;padding:9px;font-size:.8rem}
+.auth-footnote{margin:20px 0 0;color:#61718a;font-size:.88rem}
+.staff-auth .auth-story{background:linear-gradient(145deg,#172f55,#425c99)}
+.staff-auth .panel{border:0;box-shadow:none;padding:0;margin:0}
+.student-welcome{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#e9f1ff;border:1px solid #d9e7fa;border-radius:15px;padding:18px 22px;margin:10px 0 15px}
+.student-welcome h2{color:#143764;margin:9px 0 6px}
+.student-welcome p{margin:0;color:#526785}
+.journey-pill{white-space:nowrap;padding:9px 13px;border-radius:30px;background:#fff;color:#2758aa;font-size:.84rem;font-weight:800}
+.student-journey .panel h2{color:var(--navy)}
+.staff-workspace .stats{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.staff-workspace .stat{border-top:3px solid #5688d9}
+.staff-workspace .stat strong{font-size:2rem}
+.staff-workspace .panel h2{color:#183b6b}
+.staff-review-panel>.panel{border-left:4px solid #5a83cb;background:#fbfdff;border-radius:10px;margin-top:16px}
+.staff-review-panel button{margin:3px}
+.staff-review-panel li{padding:11px 0;border-bottom:1px solid var(--line)}
+.staff-review-panel li:last-child{border-bottom:0}
+@media(max-width:780px){.auth-layout{grid-template-columns:1fr;max-width:530px;margin:24px auto}.auth-story{min-height:0;padding:27px;border-radius:20px 20px 0 0}.auth-story h1{font-size:1.9rem;margin:12px 0}.auth-story-steps{margin-top:8px}.auth-card{border-radius:0 0 20px 20px;padding:32px 25px}.student-welcome{align-items:flex-start;flex-direction:column}}
+@media(max-width:480px){.auth-layout{padding:0 12px}.auth-story-steps span{font-size:.74rem}.staff-review-panel button{width:auto}.journey-pill{align-self:flex-start}}
