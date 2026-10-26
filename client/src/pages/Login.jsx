@@ -1,83 +1,40 @@
+import React,{useState} from 'react';
+import {Link,useNavigate} from 'react-router-dom';
+import {studentLogin} from '../api.js';
 
-import React, { useState } from "react";
-import { studentLogin } from "../api.js";
-import { useNavigate, Link } from "react-router-dom";
-
-export default function Login() {
-  const navigate = useNavigate();
-
-  const [form, setForm] = useState({
-    email: "",
-    password: "",
-  });
-
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError("");
-
-    if (!form.email || !form.password) {
-      setError("Email and password are required.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const result = await studentLogin(form);
-
-      if (!result?.token) {
-        throw new Error("No authentication token received.");
-      }
-
-      localStorage.setItem("nexus_token", result.token);
-      navigate("/portal");
-    } catch (err) {
-      setError(err.message || "Login failed.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <main style={{ maxWidth: 420, margin: "50px auto" }}>
-      <h2>Student Login</h2>
-
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          value={form.email}
-          onChange={(e) =>
-            setForm({ ...form, email: e.target.value })
-          }
-          required
-        />
-
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={form.password}
-          onChange={(e) =>
-            setForm({ ...form, password: e.target.value })
-          }
-          required
-        />
-
-        {error && <p role="alert">{error}</p>}
-
-        <button disabled={loading} type="submit">
-          {loading ? "Signing in..." : "Login"}
-        </button>
-      </form>
-
-      <p>
-        New student? <Link to="/enquiry">Submit an enquiry</Link>
-      </p>
-    </main>
-  );
+export default function Login(){
+ const navigate=useNavigate();
+ const [email,setEmail]=useState(''),[password,setPassword]=useState('');
+ const [show,setShow]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ async function submit(e){
+  e.preventDefault();setError('');setBusy(true);
+  try{const data=await studentLogin({email:email.trim(),password});
+   if(!data?.token)throw new Error('Unable to create your session.');
+   localStorage.setItem('nexus_token',data.token);navigate('/portal',{replace:true});
+  }catch(e){setError(e.message||'Unable to sign in. Check your credentials.');}
+  finally{setBusy(false)}
+ }
+ return <main className="auth-layout">
+  <section className="auth-story" aria-label="Student admissions">
+   <span className="eyebrow">NEXUS CRM · STUDENT ADMISSIONS</span>
+   <h1>Your next chapter starts here.</h1>
+   <p>One secure place to manage your course enquiry, eligibility review, application and admission offer.</p>
+   <div className="auth-story-steps"><span>01 · Apply</span><span>02 · Get reviewed</span><span>03 · Enrol</span></div>
+  </section>
+  <section className="auth-card">
+   <span className="eyebrow">STUDENT PORTAL</span>
+   <h2>Welcome back</h2>
+   <p className="muted">Sign in to continue your application where you left off.</p>
+   <form className="form-stack" onSubmit={submit}>
+    <label htmlFor="student-email">Email address<input id="student-email" type="email" required autoComplete="username" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)}/></label>
+    <label htmlFor="student-password">Password
+     <span className="password-field"><input id="student-password" type={show?'text':'password'} required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/><button type="button" className="password-toggle" aria-label={show?'Hide password':'Show password'} onClick={()=>setShow(!show)}>{show?'Hide':'Show'}</button></span>
+    </label>
+    {error&&<p role="alert" className="error">{error}</p>}
+    <button type="submit" disabled={busy} className="auth-submit">{busy?'Signing in…':'Sign in to your portal'}</button>
+   </form>
+   <p className="auth-footnote">New to RIC? <Link to="/enquiry">Start a course enquiry</Link></p>
+   <p className="auth-footnote">Recruitment team? <Link to="/staff/login">Staff sign in</Link></p>
+  </section>
+ </main>;
 }
