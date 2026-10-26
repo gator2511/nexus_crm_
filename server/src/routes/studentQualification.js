@@ -21,6 +21,21 @@ export function createStudentQualificationRouter(requireStudent) {
 
   router.use(requireStudent);
 
+  // Persisted Stage 1 submission is the source of truth across logins.
+  router.get("/status", async (req,res,next) => {
+    try {
+      const {rows}=await query(`
+        SELECT q.program_id,pr.name AS program_name,q.highest_qualification,
+          q.institution,q.year_completed,q.result,
+          q.language_test_type AS english_test,q.language_score AS english_score,
+          q.test_date,q.auto_result,q.auto_reasons,q.decision,q.submitted_at
+        FROM qualification q JOIN prospect p ON p.id=q.prospect_id
+        JOIN program pr ON pr.id=q.program_id
+        WHERE p.user_id=$1 LIMIT 1`,[req.student.id]);
+      res.json({completed:rows.length>0,qualification:rows[0]||null});
+    }catch(error){next(error)}
+  });
+
   router.post("/assess", async (req, res, next) => {
     try {
       const studentId = req.student?.id;
@@ -75,6 +90,8 @@ export function createStudentQualificationRouter(requireStudent) {
         );
         if (!found.rowCount) return null;
         const prospect = found.rows[0];
+        const existing=await client.query('SELECT id FROM qualification WHERE prospect_id=$1 FOR UPDATE',[prospect.id]);
+        if(existing.rowCount)return {alreadyCompleted:true};
         const details = req.body;
         await client.query(`
           INSERT INTO qualification
@@ -110,6 +127,7 @@ export function createStudentQualificationRouter(requireStudent) {
         return {stage:target};
       });
       if (!saved) return res.status(404).json({message:'Student prospect not found'});
+      if(saved.alreadyCompleted)return res.status(409).json({message:'Stage 1 has already been submitted and is locked'});
       return res.status(200).json({
         programId, assessment, preliminary:true, saved:true, stage:saved.stage
       });

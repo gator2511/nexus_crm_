@@ -15,6 +15,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
   const [review, setReview] = useState([]);
   const [documents, setDocuments] = useState({});
+  const [admissions,setAdmissions]=useState({});
   const [actionError, setActionError] = useState('');
 
   async function load() {
@@ -44,7 +45,41 @@ export default function StaffDashboard() {
         headers: {Authorization: 'Bearer ' + sessionStorage.getItem('nexus_staff_token')},
       });
       setDocuments(prev => ({...prev,[prospectId]:result.documents || []}));
+      const profile=await apiRequest('/staff/prospects/'+prospectId+'/admissions',{
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')}
+      });
+      setAdmissions(prev=>({...prev,[prospectId]:profile.admissions}));
     } catch (err) { setActionError(err.message); }
+  }
+  async function viewDocument(docId) {
+    setActionError('');
+    const tab=window.open('about:blank','_blank');
+    if(!tab){setActionError('Allow pop-ups to preview student documents');return;}
+    try {
+      const response=await fetch('/api/staff/documents/'+docId+'/view',{
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')}
+      });
+      if(!response.ok)throw new Error('Unable to open document ('+response.status+')');
+      const file=await response.blob();
+      const url=URL.createObjectURL(file);
+      tab.location.href=url;
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(err){tab.close();setActionError(err.message)}
+  }
+  async function finalDecision(applicationId,decision) {
+    const note=window.prompt('Reason for final '+decision.toLowerCase()+' decision:');
+    if(!note?.trim())return;
+    try{
+      setActionError('');
+      await apiRequest('/staff/applications/'+applicationId+'/decision',{
+        method:'POST',
+        headers:{Authorization:'Bearer '+sessionStorage.getItem('nexus_staff_token')},
+        body:JSON.stringify({decision,note})
+      });
+      await load();
+      setDocuments({});
+      setAdmissions({});
+    }catch(err){setActionError(err.message)}
   }
   async function decide(docId, action) {
     const reason = action === 'reject' ? window.prompt('Explain why the student must replace this document:') : null;
@@ -78,9 +113,9 @@ export default function StaffDashboard() {
     navigate('/staff/login', { replace: true });
   }
 
-  return <main className="page wide">
+  return <main className="page wide staff-workspace">
     <div className="page-heading">
-      <div><h1>Recruitment dashboard</h1><p className="muted">Live prospect pipeline from Nexus CRM.</p></div>
+      <div><span className="eyebrow">ADMISSIONS WORKSPACE</span><h1>Recruitment dashboard</h1><p className="muted">Review applications, verify documents and track student progress.</p></div>
       <div className="actions"><button type="button" className="secondary" onClick={load}>Refresh</button>
       <button type="button" className="secondary" onClick={logout}>Sign out</button></div>
     </div>
@@ -102,7 +137,7 @@ export default function StaffDashboard() {
           <span>{label}</span><strong>{data.summary.stageCounts[label] || 0}</strong>
         </div>)}
       </div></section>
-      <section className="panel"><h2>Pending review</h2>
+      <section className="panel staff-review-panel"><h2>Pending review</h2>
         <p className="muted">Students needing academic review or document corrections.</p>
         {actionError && <p role="alert" className="error">{actionError}</p>}
         {!review.length ? <p>No pending review cases.</p> : review.map(p =>
@@ -114,14 +149,34 @@ export default function StaffDashboard() {
               <button type="button" className="secondary" onClick={()=>reviewEligibility(p.id,'Rejected')}>Reject eligibility</button>
             </>}
             <button type="button" className="secondary" onClick={() => showDocuments(p.id)}>Review documents</button>
+            {admissions[p.id]&&<section aria-label="Student admissions details">
+              <h3>Student and application details</h3>
+              <p><strong>Contact:</strong> {admissions[p.id].email} · {admissions[p.id].phone}</p>
+              <p><strong>Program:</strong> {admissions[p.id].program_name} · <strong>Intake:</strong> {admissions[p.id].intake_name||'Not selected'}</p>
+              <p><strong>Qualification:</strong> {admissions[p.id].highest_qualification||'Not provided'} · {admissions[p.id].institution||''} · {admissions[p.id].year_completed||''}</p>
+              <p><strong>English:</strong> {admissions[p.id].language_test_type||'Not provided'} {admissions[p.id].language_score??''} · <strong>Eligibility:</strong> {admissions[p.id].auto_result||'Pending'}</p>
+              <p><strong>Application:</strong> {admissions[p.id].application_status||'Not started'} · <strong>Study mode:</strong> {admissions[p.id].study_mode||'Not selected'}</p>
+              <p><strong>Date of birth:</strong> {admissions[p.id].date_of_birth?String(admissions[p.id].date_of_birth).slice(0,10):'Not provided'} · <strong>Nationality:</strong> {admissions[p.id].nationality||'Not provided'}</p>
+              <p><strong>Emergency contact:</strong> {admissions[p.id].emergency_contact_name||'Not provided'} · {admissions[p.id].emergency_contact_phone||''}</p>
+            </section>}
             {documents[p.id] && <ul>{documents[p.id].map(d =>
-              <li key={d.id}>{d.document_type}: {d.status}
+              <li key={d.id}>{d.document_type}: {d.status} <button type="button" className="secondary" onClick={()=>viewDocument(d.id)}>View document</button>
                 {d.rejection_reason && <span> — {d.rejection_reason}</span>}
                 {d.status === 'Pending' && <>
                   <button type="button" onClick={() => decide(d.id,'verify')}>Verify</button>
                   <button type="button" className="secondary" onClick={() => decide(d.id,'reject')}>Reject</button>
                 </>}
               </li>)}</ul>}
+            {documents[p.id]?.some(d=>['Submitted','Under review'].includes(d.application_status)) && (()=>{
+              const appDocs=documents[p.id].filter(d=>['Submitted','Under review'].includes(d.application_status));
+              const allVerified=appDocs.length>0 && appDocs.every(d=>d.status==='Verified');
+              const appId=appDocs[0]?.application_id;
+              return <div className="actions">
+                <button type="button" disabled={!allVerified} onClick={()=>finalDecision(appId,'Accepted')}>Accept and issue offer PDF</button>
+                <button type="button" className="secondary" onClick={()=>finalDecision(appId,'Rejected')}>Final reject</button>
+                {!allVerified&&<p className="muted">Verify every document before final approval.</p>}
+              </div>;
+            })()}
           </div>)}
       </section>
       <ProgramCriteria />

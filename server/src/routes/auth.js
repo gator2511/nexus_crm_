@@ -33,3 +33,30 @@ studentAuthRouter.get('/me', requireStudent, async (req, res, next) => {
     return res.json({student: result.rows[0]});
   } catch (err) { next(err); }
 });
+
+/** Student portal journey overview, reconstructed from persisted records. */
+studentAuthRouter.get('/journey',requireStudent,async(req,res,next)=>{
+  try{
+    const {rows}=await query(`
+      SELECT p.id,p.full_name,p.email,p.stage,p.closed_reason,
+        pr.name AS program_name,
+        q.auto_result,q.decision AS qualification_decision,q.submitted_at AS qualification_submitted_at,
+        a.status AS application_status,a.submitted_date AS application_submitted_at,
+        a.id AS application_id,a.offer_expires_at,
+        EXISTS(SELECT 1 FROM enrolment en WHERE en.application_id=a.id) AS enrolled
+      FROM prospect p
+      LEFT JOIN LATERAL (
+        SELECT program_id FROM enquiry WHERE prospect_id=p.id
+        ORDER BY enquiry_date DESC LIMIT 1
+      ) e ON TRUE
+      LEFT JOIN qualification q ON q.prospect_id=p.id
+      LEFT JOIN LATERAL (
+        SELECT id,status,submitted_date,offer_expires_at FROM application
+        WHERE prospect_id=p.id ORDER BY created_at DESC LIMIT 1
+      ) a ON TRUE
+      LEFT JOIN program pr ON pr.id=COALESCE(q.program_id,e.program_id)
+      WHERE p.user_id=$1 LIMIT 1`,[req.student.id]);
+    if(!rows.length)return res.status(404).json({message:'Student profile not found'});
+    res.json({journey:rows[0]});
+  }catch(err){next(err)}
+});
